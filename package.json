@@ -1,0 +1,13 @@
+{
+  "name": "scopeflow-ai",
+  "version": "1.0.0",
+  "scripts": {
+    "dev:client": "npm --prefix client run dev",
+    "dev:server": "cd server && .venv\\Scripts\\python manage.py runserver",
+    "dev": "concurrently -n client,server -c cyan,green \"npm run dev:client\" \"npm run dev:server\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}
