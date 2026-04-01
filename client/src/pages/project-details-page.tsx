@@ -1,18 +1,6 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  CircleHelp,
-  Clock3,
-  Download,
-  RefreshCcw,
-  Save,
-  ShieldAlert,
-  Sparkles,
-  Trash2
-} from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, Download, RefreshCcw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectForm } from "@/components/project/project-form";
 import { Badge } from "@/components/ui/badge";
@@ -22,11 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
   deleteProject,
-  generateInsights,
-  generateProposal,
   getProject,
   markProjectFinal,
-  regenerateProjectSection,
   restoreProjectVersion,
   updateProject,
   type ProposalProject,
@@ -36,13 +21,6 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 
 type ProposalSectionKey = "summary" | "scope" | "deliverables" | "milestones" | "risks";
-
-type InsightSection = {
-  title: string;
-  items: string[];
-  icon: typeof AlertTriangle;
-  tone: string;
-};
 
 const editableSections: { key: ProposalSectionKey; title: string; placeholder: string }[] = [
   {
@@ -103,9 +81,6 @@ export function ProjectDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [savingProject, setSavingProject] = useState(false);
   const [savingSection, setSavingSection] = useState<ProposalSectionKey | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [generatingInsights, setGeneratingInsights] = useState(false);
-  const [regeneratingSection, setRegeneratingSection] = useState<ProposalSectionKey | null>(null);
   const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
   const [markingFinal, setMarkingFinal] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -183,39 +158,6 @@ export function ProjectDetailsPage() {
     ];
   }, [project]);
 
-  const insightSections = useMemo<InsightSection[]>(() => {
-    if (!project) {
-      return [];
-    }
-
-    return [
-      {
-        title: "Missing Information",
-        items: project.missing_information,
-        icon: AlertTriangle,
-        tone: "border-yellow-200 bg-yellow-50/80"
-      },
-      {
-        title: "Scope Risks",
-        items: project.scope_risks,
-        icon: ShieldAlert,
-        tone: "border-red-200 bg-red-50/80"
-      },
-      {
-        title: "Unclear Requirements",
-        items: project.unclear_requirements,
-        icon: AlertTriangle,
-        tone: "border-amber-200 bg-amber-50/80"
-      },
-      {
-        title: "Suggested Questions",
-        items: project.suggested_questions,
-        icon: CircleHelp,
-        tone: "border-sky-200 bg-sky-50/80"
-      }
-    ];
-  }, [project]);
-
   const selectedVersion = useMemo<ProposalVersion | null>(() => {
     if (!project || !selectedVersionId) {
       return null;
@@ -223,8 +165,6 @@ export function ProjectDetailsPage() {
 
     return project.versions.find((version) => version.id === selectedVersionId) ?? null;
   }, [project, selectedVersionId]);
-
-  const hasAnyInsights = insightSections.some((section) => section.items.length > 0);
 
   function getStatusVariant(status: string) {
     if (status === "completed") {
@@ -274,17 +214,6 @@ export function ProjectDetailsPage() {
       status: coreDraft?.status ?? project.status,
       ...overrides
     };
-  }
-
-  async function refreshProject() {
-    if (!id || !user?.id) {
-      return;
-    }
-
-    const refreshed = await getProject(id, user.id);
-    setProject(refreshed);
-    setSectionDrafts(buildSectionState(refreshed));
-    setSelectedVersionId(refreshed.current_version_id ?? refreshed.versions[0]?.id ?? null);
   }
 
   async function handleUpdateCore(payload: ProposalProjectPayload) {
@@ -379,89 +308,6 @@ export function ProjectDetailsPage() {
       toast.error(message);
     } finally {
       setSavingProject(false);
-    }
-  }
-
-  async function handleGenerate() {
-    if (!id || !user?.id || !project) {
-      return;
-    }
-
-    try {
-      setGenerating(true);
-      setErrorMessage("");
-      await generateProposal({
-        project_id: id,
-        ...buildPayload()
-      });
-      await refreshProject();
-      setProjectSaveState("Generated new version");
-      toast.success("New AI proposal version generated.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to generate proposal.";
-      setErrorMessage(message);
-      toast.error(message);
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  async function handleGenerateInsights() {
-    if (!id || !user?.id || !project) {
-      return;
-    }
-
-    try {
-      setGeneratingInsights(true);
-      setErrorMessage("");
-      await generateInsights({
-        project_id: id,
-        ...buildPayload()
-      });
-      await refreshProject();
-      toast.success("AI insights generated.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to generate AI insights.";
-      setErrorMessage(message);
-      toast.error(message);
-    } finally {
-      setGeneratingInsights(false);
-    }
-  }
-
-  async function handleRegenerateSection(section: ProposalSectionKey) {
-    if (!id || !user?.id || !project) {
-      return;
-    }
-
-    try {
-      setRegeneratingSection(section);
-      setSectionSaveStates((current) => ({
-        ...current,
-        [section]: "Regenerating..."
-      }));
-      const updated = await regenerateProjectSection(id, {
-        project_id: id,
-        section,
-        ...buildPayload()
-      });
-      setProject(updated);
-      setSectionSaveStates((current) => ({
-        ...current,
-        [section]: "Regenerated"
-      }));
-      setErrorMessage("");
-      toast.success(`${section[0].toUpperCase()}${section.slice(1)} regenerated.`);
-    } catch (error) {
-      setSectionSaveStates((current) => ({
-        ...current,
-        [section]: "Error"
-      }));
-      const message = error instanceof Error ? error.message : "Failed to regenerate section.";
-      setErrorMessage(message);
-      toast.error(message);
-    } finally {
-      setRegeneratingSection(null);
     }
   }
 
@@ -574,10 +420,14 @@ export function ProjectDetailsPage() {
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-3xl font-semibold">{project.project_name}</h1>
               <Badge variant={getStatusVariant(project.status)}>{project.status.replace("_", " ")}</Badge>
-              {project.current_version_id ? <Badge variant="secondary">Current {project.versions.find((version) => version.id === project.current_version_id)?.label ?? "version"}</Badge> : null}
+              {project.current_version_id ? (
+                <Badge variant="secondary">
+                  Current {project.versions.find((version) => version.id === project.current_version_id)?.label ?? "version"}
+                </Badge>
+              ) : null}
             </div>
             <p className="text-muted-foreground">
-              {project.client_name} · {project.project_type}
+              {project.client_name} - {project.project_type}
             </p>
           </div>
         </div>
@@ -586,16 +436,6 @@ export function ProjectDetailsPage() {
           <Button variant="outline" onClick={handleExportPdf}>
             <Download className="size-4" />
             Export PDF
-          </Button>
-
-          <Button onClick={handleGenerateInsights} disabled={generatingInsights}>
-            <Sparkles className="size-4" />
-            {generatingInsights ? "Generating Insights..." : "Generate AI Insights"}
-          </Button>
-
-          <Button variant="outline" onClick={handleGenerate} disabled={generating}>
-            <Sparkles className="size-4" />
-            {generating ? "Generating..." : "Generate Full Proposal"}
           </Button>
 
           <Button variant="outline" onClick={handleMarkFinal} disabled={markingFinal}>
@@ -611,76 +451,6 @@ export function ProjectDetailsPage() {
       </div>
 
       {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
-
-      <Card className="overflow-hidden">
-        <CardHeader className="border-b bg-gradient-to-r from-primary/5 to-transparent">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="size-5 text-primary" />
-                AI Insights
-              </CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Smart warnings and client follow-up guidance to make the proposal feel more intelligent.
-              </p>
-            </div>
-            <Badge variant="secondary">
-              {hasAnyInsights ? "Insights Ready" : "No Insights Yet"}
-            </Badge>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-6">
-          {!hasAnyInsights ? (
-            <div className="rounded-[1.5rem] border border-dashed p-8 text-center">
-              <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-secondary">
-                <Sparkles className="size-6 text-primary" />
-              </div>
-              <h3 className="mt-4 text-lg font-semibold">No AI insights generated yet</h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Generate insights to surface missing information, scope risks, unclear requirements, and suggested client questions.
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-4 xl:grid-cols-2">
-              {insightSections.map((section) => {
-                const Icon = section.icon;
-
-                return (
-                  <div key={section.title} className={`rounded-[1.5rem] border p-5 ${section.tone}`}>
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-10 items-center justify-center rounded-2xl bg-background/80">
-                        <Icon className="size-5" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold">{section.title}</h3>
-                        <p className="text-xs text-muted-foreground">{section.items.length} items</p>
-                      </div>
-                    </div>
-
-                    <div className="mt-4">
-                      {section.items.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No items found.</p>
-                      ) : (
-                        <ul className="space-y-3">
-                          {section.items.map((item, index) => (
-                            <li
-                              key={`${section.title}-${index}`}
-                              className="rounded-xl bg-background/70 px-4 py-3 text-sm leading-6"
-                            >
-                              {item}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
@@ -711,7 +481,7 @@ export function ProjectDetailsPage() {
               <div>
                 <CardTitle>Proposal Sections</CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Edit each section inline, save fast, or regenerate one section at a time.
+                  Edit each section inline and save updates as versions.
                 </p>
               </div>
               <Button variant="outline" onClick={handleSaveAllProposalSections} disabled={savingProject}>
@@ -732,16 +502,6 @@ export function ProjectDetailsPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleRegenerateSection(section.key)}
-                        disabled={regeneratingSection === section.key}
-                      >
-                        <RefreshCcw className="size-4" />
-                        {regeneratingSection === section.key ? "Regenerating..." : "Regenerate"}
-                      </Button>
-
                       <Button
                         size="sm"
                         onClick={() => handleSaveSection(section.key)}
@@ -778,7 +538,7 @@ export function ProjectDetailsPage() {
             <CardContent className="space-y-4">
               {project.versions.length === 0 ? (
                 <div className="rounded-[1.25rem] border border-dashed p-5 text-sm text-muted-foreground">
-                  No versions yet. Generate or save proposal sections to create version history.
+                  No versions yet. Save proposal sections to create version history.
                 </div>
               ) : (
                 project.versions.map((version) => (
@@ -798,7 +558,7 @@ export function ProjectDetailsPage() {
                           {project.current_version_id === version.id ? <Badge variant="secondary">Current</Badge> : null}
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          {version.source} · {new Date(version.created_at).toLocaleString()}
+                          {version.source} - {new Date(version.created_at).toLocaleString()}
                         </p>
                       </div>
                       <Clock3 className="size-4 text-muted-foreground" />
@@ -842,7 +602,8 @@ export function ProjectDetailsPage() {
                   <div key={`${selectedVersion.id}-${section.title}`}>
                     <p className="font-medium">{section.title}</p>
                     <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
-                      {selectedVersion[section.title.toLowerCase() as ProposalSectionKey] || `No ${section.title.toLowerCase()} saved in this version.`}
+                      {selectedVersion[section.title.toLowerCase() as ProposalSectionKey] ||
+                        `No ${section.title.toLowerCase()} saved in this version.`}
                     </p>
                   </div>
                 ))
