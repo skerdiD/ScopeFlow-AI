@@ -1,23 +1,23 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ProjectForm } from "@/components/project/project-form";
-import { createProject, type ProposalProjectPayload } from "@/lib/api";
+import { ProposalIntakeForm } from "@/components/project/proposal-intake-form";
+import { generateProposal, type GenerateProposalPayload } from "@/lib/api";
 
 export function NewProjectPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  async function handleCreateProject(payload: ProposalProjectPayload) {
+  async function handleGenerateProposal(payload: GenerateProposalPayload) {
     try {
       setLoading(true);
       setErrorMessage("");
-      const project = await createProject(payload);
-      toast.success("Project created.");
+      const project = await generateProposal(payload);
+      toast.success("Proposal generated.");
       navigate(`/projects/${project.id}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create project.";
+      const message = error instanceof Error ? error.message : "Failed to generate proposal.";
       setErrorMessage(message);
       toast.error(message);
     } finally {
@@ -29,12 +29,17 @@ export function NewProjectPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold">New Project</h1>
-        <p className="mt-1 text-muted-foreground">Create a proposal project with client scope details.</p>
+        <p className="mt-1 text-muted-foreground">Enter lightweight project details and generate a polished proposal with AI.</p>
       </div>
 
       {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
 
-      <ProjectForm submitLabel="Create Project" onSubmit={handleCreateProject} loading={loading} />
+      <ProposalIntakeForm
+        loading={loading}
+        onSubmit={handleGenerateProposal}
+        onCancel={() => navigate("/dashboard")}
+        submitLabel="Generate Proposal"
+      />
     </div>
   );
 }

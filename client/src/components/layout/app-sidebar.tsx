@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/projects/new", label: "New Project", icon: PlusCircle },
-  { to: "/dashboard", label: "All Projects", icon: FolderKanban }
+  { to: "/projects", label: "All Projects", icon: FolderKanban }
 ];
 
 export function AppSidebar() {

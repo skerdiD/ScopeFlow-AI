@@ -21,6 +21,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 
 type ProposalSectionKey = "summary" | "scope" | "deliverables" | "milestones" | "risks";
+type ProposalMilestone = { title: string; description: string };
 
 const editableSections: { key: ProposalSectionKey; title: string; placeholder: string }[] = [
   {
@@ -60,6 +61,29 @@ function buildSectionState(project: ProposalProject): SectionState {
     milestones: project.milestones || "",
     risks: project.risks || ""
   };
+}
+
+function parseTextList(value: string): string[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim().replace(/^[-*]\s*/, "").trim())
+    .filter(Boolean);
+}
+
+function parseMilestones(value: string): ProposalMilestone[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim().replace(/^[-*]\s*/, "").trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(":", 1);
+      const title = parts[0]?.trim() ?? "";
+      const description = line.includes(":") ? line.slice(line.indexOf(":") + 1).trim() : "";
+      return {
+        title: title || "Milestone",
+        description: description || "Details for this phase will be finalized during planning.",
+      };
+    });
 }
 
 export function ProjectDetailsPage() {
@@ -165,6 +189,40 @@ export function ProjectDetailsPage() {
 
     return project.versions.find((version) => version.id === selectedVersionId) ?? null;
   }, [project, selectedVersionId]);
+
+  const proposalContent = useMemo(() => {
+    if (!project) {
+      return {
+        summary: "",
+        scopeOfWork: [] as string[],
+        deliverables: [] as string[],
+        milestones: [] as ProposalMilestone[],
+      };
+    }
+
+    const generated = project.generated_proposal;
+
+    const summary = generated?.summary?.trim() || project.summary || "";
+    const scopeOfWork =
+      generated?.scope_of_work && generated.scope_of_work.length > 0
+        ? generated.scope_of_work
+        : parseTextList(project.scope);
+    const deliverables =
+      generated?.deliverables && generated.deliverables.length > 0
+        ? generated.deliverables
+        : parseTextList(project.deliverables);
+    const milestones =
+      generated?.milestones && generated.milestones.length > 0
+        ? generated.milestones
+        : parseMilestones(project.milestones);
+
+    return {
+      summary,
+      scopeOfWork,
+      deliverables,
+      milestones,
+    };
+  }, [project]);
 
   function getStatusVariant(status: string) {
     if (status === "completed") {
@@ -451,6 +509,81 @@ export function ProjectDetailsPage() {
       </div>
 
       {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Project Summary</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {proposalContent.summary ? (
+              <p className="leading-7 text-muted-foreground">{proposalContent.summary}</p>
+            ) : (
+              <p className="text-muted-foreground">No summary generated yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Scope of Work</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {proposalContent.scopeOfWork.length > 0 ? (
+              <ul className="space-y-2">
+                {proposalContent.scopeOfWork.map((item, index) => (
+                  <li key={`scope-${index}`} className="flex items-start gap-2 text-muted-foreground">
+                    <span className="mt-1 inline-block size-1.5 rounded-full bg-primary" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground">No scope items generated yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Deliverables</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {proposalContent.deliverables.length > 0 ? (
+              <ul className="space-y-2">
+                {proposalContent.deliverables.map((item, index) => (
+                  <li key={`deliverable-${index}`} className="flex items-start gap-2 text-muted-foreground">
+                    <CheckCircle2 className="mt-0.5 size-4 text-emerald-500" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground">No deliverables generated yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Project Milestones</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {proposalContent.milestones.length > 0 ? (
+              proposalContent.milestones.map((milestone, index) => (
+                <div key={`milestone-${index}`} className="rounded-xl border bg-background/40 p-3">
+                  <p className="font-medium">
+                    {index + 1}. {milestone.title}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">{milestone.description}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-muted-foreground">No milestones generated yet.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">

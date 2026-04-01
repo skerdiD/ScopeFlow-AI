@@ -3,6 +3,18 @@ const API_BASE_URL =
   import.meta.env.VITE_API_URL ??
   "http://127.0.0.1:8000/api";
 
+export type GeneratedMilestone = {
+  title: string;
+  description: string;
+};
+
+export type GeneratedProposalContent = {
+  summary: string;
+  scope_of_work: string[];
+  deliverables: string[];
+  milestones: GeneratedMilestone[];
+};
+
 export type ProposalVersion = {
   id: number;
   project: number;
@@ -37,6 +49,7 @@ export type ProposalProject = {
   scope_risks: string[];
   unclear_requirements: string[];
   suggested_questions: string[];
+  generated_proposal: GeneratedProposalContent | null;
   current_version_id: number | null;
   versions: ProposalVersion[];
   status: string;
@@ -62,6 +75,17 @@ export type ProposalProjectPayload = {
   unclear_requirements: string[];
   suggested_questions: string[];
   status: string;
+};
+
+export type GenerateProposalPayload = {
+  user_id: string;
+  client_name: string;
+  business_type: string;
+  project_goals: string;
+  required_features: string;
+  budget_range: string;
+  timeline: string;
+  call_notes: string;
 };
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -93,6 +117,18 @@ export async function getProject(id: string, userId: string): Promise<ProposalPr
 
 export async function createProject(payload: ProposalProjectPayload): Promise<ProposalProject> {
   const response = await fetch(`${API_BASE_URL}/projects/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  return handleResponse<ProposalProject>(response);
+}
+
+export async function generateProposal(payload: GenerateProposalPayload): Promise<ProposalProject> {
+  const response = await fetch(`${API_BASE_URL}/generate/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"

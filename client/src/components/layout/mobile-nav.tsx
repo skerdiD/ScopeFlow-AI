@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 const items = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/projects/new", label: "New", icon: PlusCircle },
-  { to: "/dashboard", label: "Projects", icon: FolderKanban }
+  { to: "/projects", label: "Projects", icon: FolderKanban }
 ];
 
 export function MobileNav() {

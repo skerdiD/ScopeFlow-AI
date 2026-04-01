@@ -24,6 +24,7 @@ class ProposalProject(models.Model):
     scope_risks = models.JSONField(default=list, blank=True)
     unclear_requirements = models.JSONField(default=list, blank=True)
     suggested_questions = models.JSONField(default=list, blank=True)
+    generated_proposal = models.JSONField(default=dict, blank=True)
     current_version = models.ForeignKey(
         "ProposalVersion",
         null=True,
