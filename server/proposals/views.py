@@ -114,6 +114,7 @@ def build_generated_proposal_snapshot(project: ProposalProject) -> dict:
         "scope_of_work": normalize_string_list(project.scope),
         "deliverables": normalize_string_list(project.deliverables),
         "milestones": parse_milestone_list(project.milestones),
+        "risks": normalize_string_list(project.risks),
     }
 
 
@@ -129,6 +130,7 @@ def apply_generated_proposal_to_project(project: ProposalProject, generated: dic
     project.milestones = "\n".join(
         [f"{milestone['title']}: {milestone['description']}" for milestone in generated.get("milestones", [])]
     )
+    project.risks = "\n".join([f"- {item}" for item in generated.get("risks", [])])
     project.generated_proposal = generated
 
 

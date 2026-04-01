@@ -13,6 +13,7 @@ export type GeneratedProposalContent = {
   scope_of_work: string[];
   deliverables: string[];
   milestones: GeneratedMilestone[];
+  risks: string[];
 };
 
 export type ProposalVersion = {

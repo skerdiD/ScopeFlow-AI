@@ -198,6 +198,7 @@ export function ProjectDetailsPage() {
         scopeOfWork: [] as string[],
         deliverables: [] as string[],
         milestones: [] as ProposalMilestone[],
+        risks: [] as string[],
       };
     }
 
@@ -216,12 +217,17 @@ export function ProjectDetailsPage() {
       generated?.milestones && generated.milestones.length > 0
         ? generated.milestones
         : parseMilestones(project.milestones);
+    const risks =
+      generated?.risks && generated.risks.length > 0
+        ? generated.risks
+        : parseTextList(project.risks);
 
     return {
       summary,
       scopeOfWork,
       deliverables,
       milestones,
+      risks,
     };
   }, [project]);
 
@@ -683,6 +689,26 @@ export function ProjectDetailsPage() {
               ))
             ) : (
               <p className="text-muted-foreground">No milestones generated yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Risks</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {proposalContent.risks.length > 0 ? (
+              <ul className="space-y-2">
+                {proposalContent.risks.map((item, index) => (
+                  <li key={`risk-${index}`} className="flex items-start gap-2 text-muted-foreground">
+                    <span className="mt-1 inline-block size-1.5 rounded-full bg-amber-500" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground">No risks generated yet.</p>
             )}
           </CardContent>
         </Card>

@@ -39,6 +39,7 @@ def _build_prompt(intake: dict[str, str]) -> str:
         "scope_of_work": ["string"],
         "deliverables": ["string"],
         "milestones": [{"title": "string", "description": "string"}],
+        "risks": ["string"],
     }
 
     client_name = intake.get("client_name", "").strip() or "the client"
@@ -51,8 +52,9 @@ def _build_prompt(intake: dict[str, str]) -> str:
 
     return f"""
 You are a senior digital agency strategist writing a proposal for {client_name}.
-Rewrite rough intake notes into a credible, client-facing proposal that sounds like it came from an experienced consultant.
-Your writing must be specific, practical, and grounded in the provided inputs.
+Rewrite rough intake notes into a concise, client-ready proposal.
+Write like a sharp freelancer or agency lead: practical, clear, and commercially aware.
+The result should feel 20-35% shorter than typical AI consultancy output while keeping useful detail.
 
 Return valid JSON only. No markdown. No code fences. No commentary.
 
@@ -61,29 +63,37 @@ Required JSON shape:
 
 Content rules:
 - summary:
-  - Exactly one polished paragraph written for the client.
-  - Mention the client's context, core goal, and intended business outcome.
-  - Sound natural and executive-ready, not salesy.
+  - Exactly one short paragraph.
+  - State what will be built, expected outcome, and timeline context.
+  - Keep it tight and client-facing. No inflated strategy language.
 - scope_of_work:
   - 4 to 8 items.
-  - Each item should describe concrete implementation work, not vague promises.
-  - Include practical details tied to the stated features, budget, and timeline.
+  - Each item should be a concrete workstream.
+  - Keep bullets concise and specific to provided requirements.
 - deliverables:
   - 5 to 8 realistic outputs the client will actually receive.
-  - Make deliverables tangible (for example: specific modules, handover artifacts, QA report, launch checklist, training session).
-  - Avoid boilerplate lists that could fit any project.
+  - Keep deliverables tangible and client-facing.
+  - Avoid generic boilerplate that could fit any project.
 - milestones:
   - 3 to 5 milestones in logical sequence from discovery to launch/handover.
-  - Titles must be concise and actionable.
-  - Descriptions should explain what is achieved in that phase and why it matters.
+  - Titles must be short and actionable.
+  - Descriptions should be brief and outcome-focused.
+- risks:
+  - 2 to 4 practical risks/assumptions.
+  - Keep each risk concise and specific to likely delivery constraints.
+  - Typical risk themes: scope expansion, delayed feedback, unclear requirements, third-party dependency delays.
+  - Never return an empty risks list.
 
 Writing quality rules:
-- Use clear business language with varied sentence structure.
+- Use modern, direct business language.
+- Keep sentences short to medium length and easy to scan.
 - Avoid repetitive phrases and generic filler.
-- Do not use empty claims like "high-quality solution" unless supported by specific context.
+- Avoid buzzword-heavy claims and empty qualifiers.
+- Do not use phrases like: "robust foundation", "accelerate your market entry", "operational stability post-launch", "comprehensive professional proposal draft".
 - If input is rough, improve clarity while preserving intent.
 - Do not invent constraints, integrations, or legal commitments that were not implied by the intake.
 - Keep wording concise, believable, and tailored to this project.
+- Do not repeat the same idea across sections.
 
 Project intake:
 - Client name: {client_name}
@@ -124,7 +134,14 @@ def _clean_json_text(raw_text: str) -> dict[str, Any]:
         raise GeminiApiResponseError("Gemini returned invalid JSON.")
 
 
-def _normalize_string_list(value: Any) -> list[str]:
+def _truncate_words(text: str, max_words: int) -> str:
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    return " ".join(words[:max_words]).rstrip(" ,;:") + "."
+
+
+def _normalize_string_list(value: Any, max_words: int = 24) -> list[str]:
     if isinstance(value, list):
         items = [str(item).strip() for item in value if str(item).strip()]
     elif isinstance(value, str):
@@ -143,7 +160,7 @@ def _normalize_string_list(value: Any) -> list[str]:
         if lowered in seen:
             continue
         seen.add(lowered)
-        unique_items.append(item)
+        unique_items.append(_truncate_words(item, max_words))
     return unique_items
 
 
@@ -156,7 +173,12 @@ def _normalize_milestones(value: Any) -> list[dict[str, str]]:
                 title = str(item.get("title", "")).strip()
                 description = str(item.get("description", "")).strip()
                 if title and description:
-                    milestones.append({"title": title, "description": description})
+                    milestones.append(
+                        {
+                            "title": _truncate_words(title, 8),
+                            "description": _truncate_words(description, 22),
+                        }
+                    )
             elif isinstance(item, str):
                 text = item.strip()
                 if not text:
@@ -169,7 +191,12 @@ def _normalize_milestones(value: Any) -> list[dict[str, str]]:
                     title = text
                     description = "Implementation details and delivery checkpoint."
                 if title and description:
-                    milestones.append({"title": title, "description": description})
+                    milestones.append(
+                        {
+                            "title": _truncate_words(title, 8),
+                            "description": _truncate_words(description, 22),
+                        }
+                    )
     elif isinstance(value, str):
         for line in value.splitlines():
             cleaned = line.strip().lstrip("-").lstrip("*").strip()
@@ -183,7 +210,12 @@ def _normalize_milestones(value: Any) -> list[dict[str, str]]:
                 title = cleaned
                 description = "Implementation details and delivery checkpoint."
             if title and description:
-                milestones.append({"title": title, "description": description})
+                milestones.append(
+                    {
+                        "title": _truncate_words(title, 8),
+                        "description": _truncate_words(description, 22),
+                    }
+                )
 
     unique_milestones: list[dict[str, str]] = []
     seen = set()
@@ -206,24 +238,57 @@ def _validate_item_count(items: list[Any], min_items: int, max_items: int, field
     return items
 
 
-def normalize_generated_proposal(data: dict[str, Any]) -> dict[str, Any]:
+def _fallback_risks(intake: dict[str, str]) -> list[str]:
+    timeline = intake.get("timeline", "").strip().lower()
+    required_features = intake.get("required_features", "").strip().lower()
+
+    defaults = [
+        "Scope expansion beyond the agreed feature list can affect budget and delivery dates.",
+        "Delayed stakeholder feedback can push milestone approvals and final launch timing.",
+        "Unclear requirements for key workflows may cause rework during implementation.",
+        "Third-party tools or API dependencies may introduce delays outside project control.",
+    ]
+
+    if timeline and any(token in timeline for token in ["2 week", "3 week", "1 month", "2 month"]):
+        defaults[1] = "A compressed timeline may require phased delivery to protect release quality."
+
+    if not required_features:
+        defaults[2] = "If core requirements stay broad, scope decisions may take longer and impact delivery."
+
+    return defaults
+
+
+def normalize_generated_proposal(data: dict[str, Any], intake: dict[str, str] | None = None) -> dict[str, Any]:
     summary = " ".join(str(data.get("summary", "")).split()).strip()
     if not summary:
         raise GeminiApiResponseError("Gemini returned an empty summary.")
+    summary = _truncate_words(summary, 80)
 
-    scope_of_work = _normalize_string_list(data.get("scope_of_work", []))
-    deliverables = _normalize_string_list(data.get("deliverables", []))
+    scope_of_work = _normalize_string_list(data.get("scope_of_work", []), max_words=18)
+    deliverables = _normalize_string_list(data.get("deliverables", []), max_words=16)
     milestones = _normalize_milestones(data.get("milestones", []))
+    risks = _normalize_string_list(data.get("risks", []), max_words=18)
+
+    if intake and len(risks) < 2:
+        for fallback in _fallback_risks(intake):
+            lowered = fallback.lower()
+            if lowered in {risk.lower() for risk in risks}:
+                continue
+            risks.append(fallback)
+            if len(risks) >= 4:
+                break
 
     scope_of_work = _validate_item_count(scope_of_work, min_items=4, max_items=8, field_name="scope_of_work")
     deliverables = _validate_item_count(deliverables, min_items=5, max_items=8, field_name="deliverables")
     milestones = _validate_item_count(milestones, min_items=3, max_items=5, field_name="milestones")
+    risks = _validate_item_count(risks, min_items=2, max_items=4, field_name="risks")
 
     return {
         "summary": summary,
         "scope_of_work": scope_of_work,
         "deliverables": deliverables,
         "milestones": milestones,
+        "risks": risks,
     }
 
 
@@ -244,7 +309,8 @@ def generate_structured_proposal(intake: dict[str, str]) -> dict[str, Any]:
             }
         ],
         "generationConfig": {
-            "temperature": 0.3,
+            "temperature": 0.2,
+            "maxOutputTokens": 900,
             "responseMimeType": "application/json",
         },
     }
@@ -299,4 +365,4 @@ def generate_structured_proposal(intake: dict[str, str]) -> dict[str, Any]:
         raise GeminiApiResponseError("Gemini returned an empty response.")
 
     parsed = _clean_json_text(response_text)
-    return normalize_generated_proposal(parsed)
+    return normalize_generated_proposal(parsed, intake=intake)
