@@ -30,7 +30,7 @@ export function AppSidebar() {
 
             return (
               <NavLink
-                key={item.to}
+                key={`${item.to}-${item.label}`}
                 to={item.to}
                 className={({ isActive }) =>
                   cn(
