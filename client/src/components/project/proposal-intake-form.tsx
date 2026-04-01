@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,39 +12,72 @@ type ProposalIntakeFormProps = {
   onCancel?: () => void;
   onSubmit: (payload: GenerateProposalPayload) => Promise<void>;
   submitLabel?: string;
+  initialValues?: Partial<ProposalIntakeFormValues>;
+  prefillKey?: string;
 };
 
-const budgetOptions = [
+export const budgetOptions = [
   "$2,000 - $5,000",
   "$5,000 - $10,000",
   "$10,000 - $25,000",
   "$25,000+",
 ];
 
-const timelineOptions = [
+export const timelineOptions = [
   "2-3 weeks",
   "1 month",
   "2-3 months",
   "4-6 months",
 ];
 
+export type ProposalIntakeFormValues = Omit<GenerateProposalPayload, "user_id">;
+
+const defaultFormValues: ProposalIntakeFormValues = {
+  client_name: "",
+  business_type: "",
+  project_goals: "",
+  required_features: "",
+  budget_range: budgetOptions[2],
+  timeline: timelineOptions[2],
+  call_notes: "",
+};
+
+function buildInitialValues(initialValues?: Partial<ProposalIntakeFormValues>): ProposalIntakeFormValues {
+  const mergedValues: ProposalIntakeFormValues = {
+    ...defaultFormValues,
+    ...initialValues,
+  };
+
+  const budgetRange = mergedValues.budget_range.trim();
+  if (!budgetOptions.includes(budgetRange)) {
+    mergedValues.budget_range = defaultFormValues.budget_range;
+  }
+
+  const timeline = mergedValues.timeline.trim();
+  if (!timelineOptions.includes(timeline)) {
+    mergedValues.timeline = defaultFormValues.timeline;
+  }
+
+  return mergedValues;
+}
+
 export function ProposalIntakeForm({
   loading = false,
   onCancel,
   onSubmit,
   submitLabel = "Generate Proposal",
+  initialValues,
+  prefillKey,
 }: ProposalIntakeFormProps) {
   const { user } = useAuth();
 
-  const [formValues, setFormValues] = useState({
-    client_name: "",
-    business_type: "",
-    project_goals: "",
-    required_features: "",
-    budget_range: budgetOptions[2],
-    timeline: timelineOptions[2],
-    call_notes: "",
-  });
+  const [formValues, setFormValues] = useState<ProposalIntakeFormValues>(() =>
+    buildInitialValues(initialValues)
+  );
+
+  useEffect(() => {
+    setFormValues(buildInitialValues(initialValues));
+  }, [prefillKey, initialValues]);
 
   function setField(name: keyof typeof formValues, value: string) {
     setFormValues((current) => ({

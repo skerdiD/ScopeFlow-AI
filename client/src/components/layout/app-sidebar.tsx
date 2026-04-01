@@ -1,20 +1,20 @@
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import {
+  Activity,
   ChevronDown,
+  FileStack,
   FolderKanban,
   LayoutDashboard,
   PanelLeftClose,
   PanelLeftOpen,
   PlusCircle,
   Settings,
-  Sparkles,
-  Activity,
-  FileStack,
+  Sparkles
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
-type NavLeaf = {
+type NavItem = {
   key: string;
   label: string;
   to: string;
@@ -27,7 +27,7 @@ type NavGroup = {
   key: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
-  children: NavLeaf[];
+  children: NavItem[];
   match: (pathname: string) => boolean;
 };
 
@@ -36,29 +36,13 @@ type AppSidebarProps = {
   onCollapsedChange: (collapsed: boolean) => void;
 };
 
-const primaryItems: NavLeaf[] = [
-  {
-    key: "dashboard",
-    label: "Dashboard",
-    to: "/dashboard",
-    icon: LayoutDashboard,
-    match: (pathname) => pathname === "/dashboard",
-  },
-  {
-    key: "templates",
-    label: "Templates",
-    to: "/templates",
-    icon: FileStack,
-    match: (pathname) => pathname.startsWith("/templates"),
-  },
-  {
-    key: "activity",
-    label: "Activity",
-    to: "/activity",
-    icon: Activity,
-    match: (pathname) => pathname.startsWith("/activity"),
-  },
-];
+const dashboardItem: NavItem = {
+  key: "dashboard",
+  label: "Dashboard",
+  to: "/dashboard",
+  icon: LayoutDashboard,
+  match: (pathname) => pathname === "/dashboard"
+};
 
 const projectsGroup: NavGroup = {
   key: "projects",
@@ -71,7 +55,7 @@ const projectsGroup: NavGroup = {
       label: "All Projects",
       to: "/projects",
       icon: FolderKanban,
-      match: (pathname) => pathname === "/projects",
+      match: (pathname) => pathname === "/projects"
     },
     {
       key: "new-project",
@@ -79,17 +63,34 @@ const projectsGroup: NavGroup = {
       to: "/projects/new",
       icon: PlusCircle,
       match: (pathname) => pathname === "/projects/new",
-      emphasis: "subtle",
-    },
-  ],
+      emphasis: "subtle"
+    }
+  ]
 };
 
-const utilityItem: NavLeaf = {
+const secondaryItems: NavItem[] = [
+  {
+    key: "templates",
+    label: "Templates",
+    to: "/templates",
+    icon: FileStack,
+    match: (pathname) => pathname.startsWith("/templates")
+  },
+  {
+    key: "activity",
+    label: "Activity",
+    to: "/activity",
+    icon: Activity,
+    match: (pathname) => pathname.startsWith("/activity")
+  }
+];
+
+const settingsItem: NavItem = {
   key: "settings",
   label: "Settings",
   to: "/settings",
   icon: Settings,
-  match: (pathname) => pathname.startsWith("/settings"),
+  match: (pathname) => pathname.startsWith("/settings")
 };
 
 function CollapsedTooltip({ show, label }: { show: boolean; label: string }) {
@@ -105,7 +106,7 @@ function CollapsedTooltip({ show, label }: { show: boolean; label: string }) {
 }
 
 type SidebarItemProps = {
-  item: NavLeaf;
+  item: NavItem;
   active: boolean;
   collapsed: boolean;
   nested?: boolean;
@@ -125,7 +126,7 @@ function SidebarItem({ item, active, collapsed, nested = false }: SidebarItemPro
           collapsed ? "h-10 justify-center" : "h-10 gap-3 px-3",
           nested && !collapsed ? "ml-7 h-9 rounded-lg text-[13px]" : "",
           active
-            ? "bg-primary/10 text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.15)]"
+            ? "bg-primary/10 text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.16)]"
             : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground",
           item.emphasis === "subtle" && !active ? "text-foreground/85" : ""
         )}
@@ -141,7 +142,6 @@ function SidebarItem({ item, active, collapsed, nested = false }: SidebarItemPro
 export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
   const { pathname } = useLocation();
   const projectsActive = projectsGroup.match(pathname);
-
   const [projectsOpen, setProjectsOpen] = useState<boolean>(projectsActive);
 
   useEffect(() => {
@@ -158,15 +158,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
     }
   }, [collapsed, projectsActive]);
 
-  const activePrimaryItems = useMemo(
-    () =>
-      new Set(
-        primaryItems
-          .filter((item) => item.match(pathname))
-          .map((item) => item.key)
-      ),
-    [pathname]
-  );
+  const GroupIcon = projectsGroup.icon;
 
   return (
     <aside
@@ -220,83 +212,74 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
         <nav className="space-y-1.5">
-          {primaryItems.map((item) => (
+          <SidebarItem item={dashboardItem} active={dashboardItem.match(pathname)} collapsed={collapsed} />
+
+          {collapsed ? (
             <SidebarItem
-              key={item.key}
-              item={item}
-              active={activePrimaryItems.has(item.key)}
-              collapsed={collapsed}
+              item={{
+                key: projectsGroup.key,
+                label: projectsGroup.label,
+                to: "/projects",
+                icon: projectsGroup.icon,
+                match: projectsGroup.match
+              }}
+              active={projectsActive}
+              collapsed
             />
-          ))}
-
-          <div className="pt-1">
-            {collapsed ? (
-              <SidebarItem
-                item={{
-                  key: projectsGroup.key,
-                  label: projectsGroup.label,
-                  to: "/projects",
-                  icon: projectsGroup.icon,
-                  match: projectsGroup.match,
-                }}
-                active={projectsActive}
-                collapsed
-              />
-            ) : (
-              <div className="space-y-1">
-                <button
-                  type="button"
-                  onClick={() => setProjectsOpen((open) => !open)}
+          ) : (
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => setProjectsOpen((open) => !open)}
+                className={cn(
+                  "flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-all duration-200",
+                  projectsActive
+                    ? "bg-primary/10 text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.16)]"
+                    : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
+                )}
+                aria-expanded={projectsOpen}
+              >
+                <GroupIcon className="size-4 shrink-0" />
+                <span className="flex-1 truncate">{projectsGroup.label}</span>
+                <ChevronDown
                   className={cn(
-                    "flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-all duration-200",
-                    projectsActive
-                      ? "bg-primary/10 text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.15)]"
-                      : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
+                    "size-4 shrink-0 transition-transform duration-200",
+                    projectsOpen ? "rotate-180" : "rotate-0"
                   )}
-                  aria-expanded={projectsOpen}
-                >
-                  <projectsGroup.icon className="size-4 shrink-0" />
-                  <span className="flex-1 truncate">{projectsGroup.label}</span>
-                  <ChevronDown
-                    className={cn(
-                      "size-4 shrink-0 transition-transform duration-200",
-                      projectsOpen ? "rotate-180" : "rotate-0"
-                    )}
-                  />
-                </button>
+                />
+              </button>
 
-                <div
-                  className={cn(
-                    "grid transition-all duration-200",
-                    projectsOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-                  )}
-                >
-                  <div className="overflow-hidden">
-                    <div className="space-y-1 py-1">
-                      {projectsGroup.children.map((child) => (
-                        <SidebarItem
-                          key={child.key}
-                          item={child}
-                          active={child.match(pathname)}
-                          collapsed={false}
-                          nested
-                        />
-                      ))}
-                    </div>
+              <div
+                className={cn(
+                  "grid transition-all duration-200",
+                  projectsOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                )}
+              >
+                <div className="overflow-hidden">
+                  <div className="space-y-1 py-1">
+                    {projectsGroup.children.map((child) => (
+                      <SidebarItem
+                        key={child.key}
+                        item={child}
+                        active={child.match(pathname)}
+                        collapsed={false}
+                        nested
+                      />
+                    ))}
                   </div>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {secondaryItems.map((item) => (
+            <SidebarItem key={item.key} item={item} active={item.match(pathname)} collapsed={collapsed} />
+          ))}
         </nav>
       </div>
 
       <div className="border-t p-3">
-        <SidebarItem
-          item={utilityItem}
-          active={utilityItem.match(pathname)}
-          collapsed={collapsed}
-        />
+        <SidebarItem item={settingsItem} active={settingsItem.match(pathname)} collapsed={collapsed} />
       </div>
     </aside>
   );

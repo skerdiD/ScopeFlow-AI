@@ -18,6 +18,7 @@ import {
   type ProposalProjectPayload,
   type ProposalVersion
 } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/hooks/use-auth";
 
 type ProposalSectionKey = "summary" | "scope" | "deliverables" | "milestones" | "risks";
@@ -275,9 +276,11 @@ export function ProjectDetailsPage() {
   }
 
   async function handleUpdateCore(payload: ProposalProjectPayload) {
-    if (!id) {
+    if (!id || !project) {
       return;
     }
+
+    const previousStatus = project.status;
 
     try {
       setSavingProject(true);
@@ -295,6 +298,33 @@ export function ProjectDetailsPage() {
       setProject(updated);
       setProjectSaveState("Saved");
       setErrorMessage("");
+      logActivity({
+        type: "project_updated",
+        title: "Project details updated",
+        description: `Core details updated for ${updated.project_name}.`,
+        projectId: updated.id,
+        projectName: updated.project_name,
+        actor: "user",
+        metadata: {
+          status: updated.status
+        }
+      });
+
+      if (previousStatus !== updated.status) {
+        logActivity({
+          type: "status_changed",
+          title: "Project status changed",
+          description: `${updated.project_name} moved from ${previousStatus} to ${updated.status}.`,
+          projectId: updated.id,
+          projectName: updated.project_name,
+          actor: "system",
+          metadata: {
+            from: previousStatus,
+            to: updated.status
+          }
+        });
+      }
+
       toast.success("Project details saved.");
     } catch (error) {
       setProjectSaveState("Error");
@@ -325,6 +355,17 @@ export function ProjectDetailsPage() {
         [section]: "Saved as new version"
       }));
       setErrorMessage("");
+      logActivity({
+        type: "version_saved",
+        title: "Proposal section saved",
+        description: `${section[0].toUpperCase()}${section.slice(1)} updated for ${updated.project_name}.`,
+        projectId: updated.id,
+        projectName: updated.project_name,
+        actor: "user",
+        metadata: {
+          section
+        }
+      });
       toast.success(`${section[0].toUpperCase()}${section.slice(1)} saved.`);
     } catch (error) {
       setSectionSaveStates((current) => ({
@@ -358,6 +399,17 @@ export function ProjectDetailsPage() {
         risks: "Saved"
       });
       setErrorMessage("");
+      logActivity({
+        type: "version_saved",
+        title: "Proposal version saved",
+        description: `All proposal sections saved for ${updated.project_name}.`,
+        projectId: updated.id,
+        projectName: updated.project_name,
+        actor: "user",
+        metadata: {
+          mode: "all_sections"
+        }
+      });
       toast.success("Proposal changes saved as a new version.");
     } catch (error) {
       setProjectSaveState("Error");
@@ -384,6 +436,17 @@ export function ProjectDetailsPage() {
       setSelectedVersionId(versionId);
       setProjectSaveState("Switched version");
       setErrorMessage("");
+      logActivity({
+        type: "version_saved",
+        title: "Version restored",
+        description: `Switched ${updated.project_name} to a previous saved version.`,
+        projectId: updated.id,
+        projectName: updated.project_name,
+        actor: "user",
+        metadata: {
+          versionId
+        }
+      });
       toast.success("Version switched.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to switch version.";
@@ -399,6 +462,8 @@ export function ProjectDetailsPage() {
       return;
     }
 
+    const previousStatus = project.status;
+
     try {
       setMarkingFinal(true);
       const updated = await markProjectFinal(id, buildPayload({ status: "completed" }));
@@ -406,6 +471,33 @@ export function ProjectDetailsPage() {
       setSelectedVersionId(updated.current_version_id);
       setProjectSaveState("Marked final");
       setErrorMessage("");
+      logActivity({
+        type: "final_marked",
+        title: "Final version marked",
+        description: `${updated.project_name} marked as final proposal version.`,
+        projectId: updated.id,
+        projectName: updated.project_name,
+        actor: "user",
+        metadata: {
+          status: updated.status
+        }
+      });
+
+      if (previousStatus !== updated.status) {
+        logActivity({
+          type: "status_changed",
+          title: "Project status changed",
+          description: `${updated.project_name} moved from ${previousStatus} to ${updated.status}.`,
+          projectId: updated.id,
+          projectName: updated.project_name,
+          actor: "system",
+          metadata: {
+            from: previousStatus,
+            to: updated.status
+          }
+        });
+      }
+
       toast.success("Project marked as final.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to mark final version.";
@@ -443,6 +535,17 @@ export function ProjectDetailsPage() {
     try {
       const { exportProjectToPdf } = await import("@/lib/pdf");
       exportProjectToPdf(project);
+      logActivity({
+        type: "pdf_exported",
+        title: "Proposal PDF exported",
+        description: `PDF exported for ${project.project_name}.`,
+        projectId: project.id,
+        projectName: project.project_name,
+        actor: "system",
+        metadata: {
+          format: "pdf"
+        }
+      });
       toast.success("PDF exported.");
     } catch {
       toast.error("Failed to export PDF.");

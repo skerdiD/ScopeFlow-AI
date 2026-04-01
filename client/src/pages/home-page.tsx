@@ -37,6 +37,30 @@ const miniStats = [
   { label: "Delivered", value: "15" }
 ];
 
+const howItWorksSteps = [
+  {
+    title: "Enter Client Details",
+    description:
+      "Fill out a simple form with your client's project requirements, budget, timeline, and goals."
+  },
+  {
+    title: "AI Generates Proposal",
+    description:
+      "Our AI analyzes the information and creates a comprehensive, professional proposal draft."
+  },
+  {
+    title: "Review & Export",
+    description:
+      "Edit the proposal, save it to your dashboard, and export it when you're ready to send."
+  }
+];
+
+const trustStats = [
+  { value: "1000+", label: "Proposals Generated" },
+  { value: "95%", label: "Client Win Rate" },
+  { value: "10hrs", label: "Saved Per Week" }
+];
+
 export function HomePage() {
   const { user } = useAuth();
 
@@ -195,6 +219,96 @@ export function HomePage() {
           </div>
         </div>
       </section>
+
+      <section className="mx-auto max-w-6xl px-4 pb-8 sm:px-6 lg:px-8">
+        <div className="rounded-3xl border bg-card/80 p-6 shadow-sm sm:p-8">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">How It Works</h2>
+            <p className="mt-3 text-sm text-muted-foreground sm:text-base">
+              From rough discovery notes to a client-ready proposal in three focused steps.
+            </p>
+          </div>
+
+          <ol className="mt-8 grid gap-4 md:grid-cols-3">
+            {howItWorksSteps.map((step, index) => (
+              <li key={step.title} className="rounded-2xl border bg-background/80 p-5">
+                <div className="flex items-start gap-3">
+                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-violet-500 text-sm font-semibold text-white shadow-sm">
+                    {index + 1}
+                  </span>
+                  <div>
+                    <h3 className="text-base font-semibold">{step.title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{step.description}</p>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="text-center">
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            Trusted by Freelancers & Agencies
+          </h2>
+        </div>
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {trustStats.map((stat) => (
+            <Card key={stat.label} className="border-border/80 bg-card/90 shadow-sm">
+              <CardContent className="p-6 text-center">
+                <p className="text-3xl font-semibold tracking-tight text-primary">{stat.value}</p>
+                <p className="mt-2 text-sm text-muted-foreground">{stat.label}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="rounded-3xl bg-gradient-to-r from-blue-600 via-primary to-violet-600 px-6 py-12 text-center text-white shadow-xl sm:px-10">
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            Ready to Create Your First Proposal?
+          </h2>
+          <p className="mx-auto mt-3 max-w-2xl text-sm text-white/90 sm:text-base">
+            Join hundreds of freelancers and agencies who are closing deals faster with ScopeFlow AI.
+          </p>
+
+          <div className="mt-7">
+            <Button
+              asChild
+              size="lg"
+              className="bg-white text-primary hover:bg-white/90"
+            >
+              {user ? (
+                <Link to="/dashboard">
+                  Open Dashboard
+                  <ArrowRight className="size-4" />
+                </Link>
+              ) : (
+                <Link to="/signup">
+                  Start Free Today
+                  <ArrowRight className="size-4" />
+                </Link>
+              )}
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <footer className="border-t">
+        <div className="mx-auto max-w-6xl px-4 py-8 text-center sm:px-6 lg:px-8">
+          <div className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-sm font-medium">
+            <span className="flex size-6 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+              <Sparkles className="size-3.5" />
+            </span>
+            <span>ScopeFlow AI</span>
+          </div>
+          <p className="mt-3 text-xs text-muted-foreground">(c) 2026 ScopeFlow AI. All rights reserved.</p>
+        </div>
+      </footer>
     </div>
   );
 }
+
