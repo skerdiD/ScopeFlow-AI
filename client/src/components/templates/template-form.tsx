@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import {
   TEMPLATE_SECTION_CONFIG,
   createDefaultTemplateSections,
@@ -21,6 +22,7 @@ type TemplateFormProps = {
   submitting?: boolean;
   onCancel: () => void;
   onSubmit: (draft: TemplateDraftInput) => Promise<void> | void;
+  className?: string;
 };
 
 type TemplateFormValues = {
@@ -29,6 +31,8 @@ type TemplateFormValues = {
   category: string;
   sections: TemplateSections;
 };
+
+const CUSTOM_CATEGORY_VALUE = "__custom__";
 
 function createInitialValues(initialTemplate?: ProposalTemplate | null): TemplateFormValues {
   if (!initialTemplate) {
@@ -48,24 +52,79 @@ function createInitialValues(initialTemplate?: ProposalTemplate | null): Templat
   };
 }
 
+function createInitialExpandedSections(
+  initialTemplate?: ProposalTemplate | null
+): Record<TemplateSectionKey, boolean> {
+  return TEMPLATE_SECTION_CONFIG.reduce(
+    (accumulator, section, index) => {
+      const sectionValue = initialTemplate?.sections?.[section.key];
+      const hasContent = Boolean(sectionValue?.content?.trim());
+      const isIncluded = Boolean(sectionValue?.included);
+      accumulator[section.key] = initialTemplate
+        ? isIncluded || hasContent
+        : index < 3;
+      return accumulator;
+    },
+    {} as Record<TemplateSectionKey, boolean>
+  );
+}
+
+function normalizeCategoryOptions(categories: string[]) {
+  return [...new Set(categories.map((category) => category.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b)
+  );
+}
+
 export function TemplateForm({
   mode,
   initialTemplate,
   categories,
   submitting = false,
   onCancel,
-  onSubmit
+  onSubmit,
+  className
 }: TemplateFormProps) {
+  const categoryOptions = useMemo(() => normalizeCategoryOptions(categories), [categories]);
   const [values, setValues] = useState<TemplateFormValues>(() => createInitialValues(initialTemplate));
+  const [expandedSections, setExpandedSections] = useState<Record<TemplateSectionKey, boolean>>(
+    () => createInitialExpandedSections(initialTemplate)
+  );
+  const [useCustomCategory, setUseCustomCategory] = useState<boolean>(() => {
+    const initialCategory = createInitialValues(initialTemplate).category;
+    return !initialCategory || !normalizeCategoryOptions(categories).includes(initialCategory);
+  });
 
   useEffect(() => {
-    setValues(createInitialValues(initialTemplate));
-  }, [initialTemplate, mode]);
+    const initialValues = createInitialValues(initialTemplate);
+    setValues(initialValues);
+    setExpandedSections(createInitialExpandedSections(initialTemplate));
+    const incomingCategory = initialValues.category;
+    setUseCustomCategory(!incomingCategory || !categoryOptions.includes(incomingCategory));
+  }, [initialTemplate, mode, categoryOptions]);
 
   const includedSectionsCount = useMemo(
     () => TEMPLATE_SECTION_CONFIG.filter((section) => values.sections[section.key].included).length,
     [values.sections]
   );
+
+  function toggleSection(sectionKey: TemplateSectionKey) {
+    setExpandedSections((current) => ({
+      ...current,
+      [sectionKey]: !current[sectionKey]
+    }));
+  }
+
+  function setAllSectionsExpanded(expanded: boolean) {
+    setExpandedSections(
+      TEMPLATE_SECTION_CONFIG.reduce(
+        (accumulator, section) => {
+          accumulator[section.key] = expanded;
+          return accumulator;
+        },
+        {} as Record<TemplateSectionKey, boolean>
+      )
+    );
+  }
 
   function updateSectionInclusion(sectionKey: TemplateSectionKey, included: boolean) {
     setValues((current) => ({
@@ -78,6 +137,12 @@ export function TemplateForm({
         }
       }
     }));
+    if (included) {
+      setExpandedSections((current) => ({
+        ...current,
+        [sectionKey]: true
+      }));
+    }
   }
 
   function updateSectionContent(sectionKey: TemplateSectionKey, content: string) {
@@ -95,6 +160,9 @@ export function TemplateForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!values.category.trim()) {
+      return;
+    }
 
     await onSubmit({
       name: values.name.trim(),
@@ -105,124 +173,171 @@ export function TemplateForm({
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="template-name">Template Name</Label>
-          <Input
-            id="template-name"
-            required
-            value={values.name}
-            onChange={(event) =>
-              setValues((current) => ({
-                ...current,
-                name: event.target.value
-              }))
-            }
-            placeholder="Website Redesign Proposal"
-          />
-        </div>
-
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="template-description">Description</Label>
-          <Textarea
-            id="template-description"
-            required
-            value={values.description}
-            onChange={(event) =>
-              setValues((current) => ({
-                ...current,
-                description: event.target.value
-              }))
-            }
-            placeholder="Reusable structure for redesign projects with clear UX and delivery milestones."
-            className="min-h-[96px]"
-          />
-        </div>
-
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="template-category">Category / Project Type</Label>
-          <Input
-            id="template-category"
-            required
-            list="template-categories"
-            value={values.category}
-            onChange={(event) =>
-              setValues((current) => ({
-                ...current,
-                category: event.target.value
-              }))
-            }
-            placeholder="SaaS, E-commerce, Internal Tools..."
-          />
-          <datalist id="template-categories">
-            {categories.map((category) => (
-              <option key={category} value={category} />
-            ))}
-          </datalist>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold">Template Sections</h3>
-            <p className="text-xs text-muted-foreground">
-              Select sections to include and define default draft text.
-            </p>
+    <form className={cn("flex min-h-0 flex-1 flex-col", className)} onSubmit={handleSubmit}>
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4 sm:px-6">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="template-name">Template Name</Label>
+            <Input
+              id="template-name"
+              required
+              value={values.name}
+              onChange={(event) =>
+                setValues((current) => ({
+                  ...current,
+                  name: event.target.value
+                }))
+              }
+              placeholder="Website Redesign Proposal"
+            />
           </div>
-          <div className="inline-flex items-center gap-1 rounded-full border bg-background px-2.5 py-1 text-xs font-medium">
-            <CheckCircle2 className="size-3.5 text-primary" />
-            {includedSectionsCount} included
+
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="template-description">Description</Label>
+            <Textarea
+              id="template-description"
+              required
+              value={values.description}
+              onChange={(event) =>
+                setValues((current) => ({
+                  ...current,
+                  description: event.target.value
+                }))
+              }
+              placeholder="Reusable structure for redesign projects with clear UX and delivery milestones."
+              className="min-h-[96px]"
+            />
+          </div>
+
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="template-category">Category / Project Type</Label>
+            <select
+              id="template-category"
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-ring"
+              value={useCustomCategory ? CUSTOM_CATEGORY_VALUE : values.category}
+              onChange={(event) => {
+                const selected = event.target.value;
+                if (selected === CUSTOM_CATEGORY_VALUE) {
+                  setUseCustomCategory(true);
+                  setValues((current) => ({ ...current, category: "" }));
+                  return;
+                }
+                setUseCustomCategory(false);
+                setValues((current) => ({ ...current, category: selected }));
+              }}
+            >
+              {categoryOptions.length === 0 ? (
+                <option value={CUSTOM_CATEGORY_VALUE}>Custom category</option>
+              ) : null}
+              {categoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+              <option value={CUSTOM_CATEGORY_VALUE}>Custom category...</option>
+            </select>
+            {useCustomCategory ? (
+              <Input
+                required
+                value={values.category}
+                onChange={(event) =>
+                  setValues((current) => ({
+                    ...current,
+                    category: event.target.value
+                  }))
+                }
+                placeholder="Type custom category"
+              />
+            ) : null}
           </div>
         </div>
 
         <div className="space-y-3">
-          {TEMPLATE_SECTION_CONFIG.map((section) => {
-            const sectionValue = values.sections[section.key];
-            const included = sectionValue.included;
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">Template Sections</h3>
+              <p className="text-xs text-muted-foreground">
+                Select sections to include and define default draft text.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center gap-1 rounded-full border bg-background px-2.5 py-1 text-xs font-medium">
+                <CheckCircle2 className="size-3.5 text-primary" />
+                {includedSectionsCount} included
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => setAllSectionsExpanded(true)}>
+                Expand All
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => setAllSectionsExpanded(false)}>
+                Collapse All
+              </Button>
+            </div>
+          </div>
 
-            return (
-              <div key={section.key} className="rounded-xl border bg-background/70 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium">{getTemplateSectionLabel(section.key)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {included ? "Included in generated proposal draft." : "Excluded from template output."}
-                    </p>
+          <div className="space-y-3 pb-1">
+            {TEMPLATE_SECTION_CONFIG.map((section) => {
+              const sectionValue = values.sections[section.key];
+              const included = sectionValue.included;
+              const isExpanded = expandedSections[section.key];
+
+              return (
+                <div key={section.key} className="rounded-xl border bg-background/70">
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-3">
+                    <div>
+                      <p className="text-sm font-medium">{getTemplateSectionLabel(section.key)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {included ? "Included in generated proposal draft." : "Excluded from template output."}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium">
+                        <input
+                          type="checkbox"
+                          className="size-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
+                          checked={included}
+                          onChange={(event) => updateSectionInclusion(section.key, event.target.checked)}
+                        />
+                        Include
+                      </label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => toggleSection(section.key)}
+                        aria-label={`${isExpanded ? "Collapse" : "Expand"} ${getTemplateSectionLabel(section.key)}`}
+                      >
+                        {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                      </Button>
+                    </div>
                   </div>
 
-                  <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium">
-                    <input
-                      type="checkbox"
-                      className="size-4 rounded border-border text-primary focus:ring-2 focus:ring-primary/30"
-                      checked={included}
-                      onChange={(event) => updateSectionInclusion(section.key, event.target.checked)}
-                    />
-                    Include
-                  </label>
+                  {isExpanded ? (
+                    <div className="border-t px-3 pb-3 pt-3">
+                      <Textarea
+                        value={sectionValue.content}
+                        onChange={(event) => updateSectionContent(section.key, event.target.value)}
+                        placeholder={`Default ${getTemplateSectionLabel(section.key).toLowerCase()} content...`}
+                        className="min-h-[88px]"
+                        disabled={!included}
+                      />
+                    </div>
+                  ) : null}
                 </div>
-
-                <Textarea
-                  value={sectionValue.content}
-                  onChange={(event) => updateSectionContent(section.key, event.target.value)}
-                  placeholder={`Default ${getTemplateSectionLabel(section.key).toLowerCase()} content...`}
-                  className="mt-3 min-h-[88px]"
-                  disabled={!included}
-                />
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-end">
-        <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={submitting}>
-          {submitting ? "Saving..." : mode === "create" ? "Create Template" : "Save Changes"}
-        </Button>
+      <div className="border-t bg-background/95 px-5 py-4 sm:px-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? "Saving..." : mode === "create" ? "Create Template" : "Save Changes"}
+          </Button>
+        </div>
       </div>
     </form>
   );

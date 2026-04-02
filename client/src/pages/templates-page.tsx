@@ -290,8 +290,8 @@ export function TemplatesPage() {
       ) : null}
 
       <Dialog open={dialogMode !== null} onOpenChange={(open) => (!open ? closeTemplateDialog() : null)}>
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-h-[88vh] sm:max-w-3xl">
+          <DialogHeader className="shrink-0 border-b px-5 py-4 sm:px-6">
             <DialogTitle>{dialogMode === "create" ? "Create Template" : "Edit Template"}</DialogTitle>
             <DialogDescription>
               {dialogMode === "create"
@@ -307,6 +307,7 @@ export function TemplatesPage() {
             submitting={submitting}
             onCancel={closeTemplateDialog}
             onSubmit={handleSaveTemplate}
+            className="min-h-0"
           />
         </DialogContent>
       </Dialog>
