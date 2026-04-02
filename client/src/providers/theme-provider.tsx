@@ -9,6 +9,10 @@ import {
 
 type Theme = "light" | "dark";
 type ThemeToggleOrigin = { x: number; y: number };
+type ThemeTransition = { ready: Promise<void> };
+type DocumentWithTransition = Document & {
+  startViewTransition?: (callback: () => void | Promise<void>) => ThemeTransition;
+};
 
 type ThemeContextValue = {
   theme: Theme;
@@ -55,38 +59,41 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         return;
       }
 
-      const existing = document.querySelector<HTMLElement>(".theme-reveal-overlay");
-      if (existing) {
-        existing.remove();
-      }
-
-      const overlay = document.createElement("span");
-      overlay.className = "theme-reveal-overlay";
-
-      const startSize = 14;
       const maxRadius = Math.hypot(
         Math.max(origin.x, window.innerWidth - origin.x),
         Math.max(origin.y, window.innerHeight - origin.y)
       );
-      const scale = maxRadius / (startSize / 2);
+      document.documentElement.style.setProperty("--theme-origin-x", `${origin.x}px`);
+      document.documentElement.style.setProperty("--theme-origin-y", `${origin.y}px`);
+      document.documentElement.style.setProperty("--theme-end-radius", `${maxRadius}px`);
 
-      overlay.style.width = `${startSize}px`;
-      overlay.style.height = `${startSize}px`;
-      overlay.style.left = `${origin.x}px`;
-      overlay.style.top = `${origin.y}px`;
-      overlay.style.background = nextTheme === "dark" ? "#020617" : "#f8fafc";
+      const doc = document as DocumentWithTransition;
+      if (!doc.startViewTransition) {
+        setThemeState(nextTheme);
+        return;
+      }
 
-      document.body.appendChild(overlay);
-
-      requestAnimationFrame(() => {
-        overlay.style.transform = `translate(-50%, -50%) scale(${scale})`;
+      const transition = doc.startViewTransition(() => {
+        setThemeState(nextTheme);
       });
 
-      window.setTimeout(() => {
-        setThemeState(nextTheme);
-        overlay.style.opacity = "0";
-        window.setTimeout(() => overlay.remove(), 220);
-      }, 480);
+      transition.ready.then(() => {
+        document.documentElement.animate(
+          {
+            clipPath: [
+              `circle(0px at ${origin.x}px ${origin.y}px)`,
+              `circle(${Math.round(maxRadius * 0.45)}px at ${origin.x}px ${origin.y}px)`,
+              `circle(${Math.round(maxRadius * 0.8)}px at ${origin.x}px ${origin.y}px)`,
+              `circle(${maxRadius}px at ${origin.x}px ${origin.y}px)`
+            ]
+          },
+          {
+            duration: 580,
+            easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+            pseudoElement: "::view-transition-new(root)"
+          }
+        );
+      });
     },
     []
   );

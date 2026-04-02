@@ -74,17 +74,18 @@
   }
 }
 
-.theme-reveal-overlay {
-  position: fixed;
-  z-index: 9999;
-  border-radius: 9999px;
-  pointer-events: none;
-  transform: translate(-50%, -50%) scale(0);
-  opacity: 1;
-  transition:
-    transform 520ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 220ms ease;
-  will-change: transform, opacity;
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 2;
 }
 
 @keyframes fade-up {
