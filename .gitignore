@@ -15,8 +15,11 @@ lerna-debug.log*
 
 # Environment files
 .env
+**/.env
 .env.*
+**/.env.*
 !.env.example
+!**/.env.example
 
 # Node / frontend
 node_modules/
@@ -42,4 +45,3 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .cache/
-
