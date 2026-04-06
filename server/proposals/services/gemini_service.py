@@ -337,6 +337,312 @@ def _fallback_risks(intake: dict[str, str]) -> list[str]:
     return defaults
 
 
+LOW_SIGNAL_PHRASES = {
+    "i dont know",
+    "i don't know",
+    "idk",
+    "something",
+    "something good",
+    "stuff",
+    "things",
+    "etc",
+    "tbd",
+    "to be decided",
+    "unknown",
+    "n/a",
+    "na",
+}
+
+GENERIC_SINGLE_WORDS = {
+    "product",
+    "products",
+    "service",
+    "services",
+    "project",
+    "template",
+    "website",
+    "app",
+}
+
+
+def _normalize_space(value: Any) -> str:
+    return " ".join(str(value).split()).strip()
+
+
+def _is_low_signal_text(value: Any) -> bool:
+    text = _normalize_space(value).lower()
+    if not text:
+        return True
+
+    if text in LOW_SIGNAL_PHRASES:
+        return True
+
+    if any(phrase in text for phrase in LOW_SIGNAL_PHRASES):
+        return True
+
+    words = [word for word in text.split(" ") if word]
+    if len(words) == 1 and words[0] in GENERIC_SINGLE_WORDS:
+        return True
+
+    if len(words) <= 2 and text in {"good", "nice", "better", "new"}:
+        return True
+
+    return False
+
+
+def _extract_lines(value: Any) -> list[str]:
+    if isinstance(value, list):
+        raw_lines = [str(item) for item in value]
+    elif isinstance(value, str):
+        raw_lines = value.splitlines()
+    else:
+        raw_lines = []
+
+    lines = []
+    for line in raw_lines:
+        cleaned = str(line).strip().lstrip("-").lstrip("*").strip()
+        if cleaned:
+            lines.append(cleaned)
+    return lines
+
+
+def _detect_template_archetype(user_prompt: str, category_hint: str = "") -> str:
+    text = f"{user_prompt} {category_hint}".lower()
+
+    if any(token in text for token in ["ecommerce", "e-commerce", "shopify", "store", "checkout", "catalog"]):
+        return "ecommerce"
+    if any(token in text for token in ["saas", "mvp", "startup", "subscription", "b2b platform"]):
+        return "saas"
+    if any(token in text for token in ["dashboard", "admin", "internal tool", "backoffice", "operations"]):
+        return "internal-tools"
+    if any(token in text for token in ["mobile", "ios", "android", "app launch", "app"]):
+        return "mobile-app"
+    if any(token in text for token in ["redesign", "landing page", "website", "web design", "seo"]):
+        return "web-design"
+    if any(token in text for token in ["brand", "content", "marketing", "campaign"]):
+        return "marketing"
+
+    return "general"
+
+
+def _get_template_blueprint(archetype: str) -> dict[str, Any]:
+    blueprints: dict[str, dict[str, Any]] = {
+        "ecommerce": {
+            "category": "E-commerce",
+            "name": "E-commerce Growth Template",
+            "description": "For launching or optimizing online stores with stronger conversion flow and operational readiness.",
+            "summary": "Launch or refine an e-commerce experience focused on conversion, reliable checkout, and smoother day-to-day store operations.",
+            "scope": [
+                "Store structure and conversion flow planning",
+                "Product catalog and collection page optimization",
+                "Checkout, payment, and shipping configuration",
+                "Analytics, tracking, and sales funnel instrumentation",
+                "Order management workflow and post-purchase setup",
+            ],
+            "deliverables": [
+                "Finalized store architecture and user journey map",
+                "Optimized product and collection page templates",
+                "Configured checkout with payment and shipping rules",
+                "Analytics dashboard with conversion event tracking",
+                "Launch checklist and operational handover notes",
+            ],
+            "milestones": [
+                "Discovery and commercial priorities alignment",
+                "Store and conversion flow implementation",
+                "Testing, QA, and launch preparation",
+                "Go-live and performance optimization handover",
+            ],
+            "timeline": "6-8 weeks",
+            "assumptions": "Client provides product data, pricing rules, and brand assets on agreed review timelines.",
+            "risks": "Late catalog changes or third-party app dependencies may impact launch timing.",
+        },
+        "saas": {
+            "category": "SaaS",
+            "name": "SaaS MVP Template",
+            "description": "For building lean SaaS MVPs with clear core workflows and production-ready delivery.",
+            "summary": "Build a focused SaaS MVP centered on core user workflows, fast validation, and a stable production release baseline.",
+            "scope": [
+                "MVP scope definition and feature prioritization",
+                "Core workflow implementation for primary users",
+                "Authentication, authorization, and account setup",
+                "Operational dashboard and key reporting views",
+                "Release readiness, monitoring, and handover setup",
+            ],
+            "deliverables": [
+                "Validated MVP scope and feature breakdown",
+                "Working SaaS application with core workflows",
+                "Admin controls for key operational tasks",
+                "Production deployment baseline and monitoring setup",
+                "Technical documentation and handover guidance",
+            ],
+            "milestones": [
+                "Scope alignment and architecture direction",
+                "Core product build and iterative reviews",
+                "Quality assurance and stabilization sprint",
+                "Production release and post-launch handover",
+            ],
+            "timeline": "10-12 weeks",
+            "assumptions": "Product owner feedback is provided in each review sprint.",
+            "risks": "Scope expansion during build may require timeline or phase adjustments.",
+        },
+        "web-design": {
+            "category": "Web Design",
+            "name": "Website Redesign Template",
+            "description": "For redesign projects that need stronger messaging, UX clarity, and improved conversion flow.",
+            "summary": "Redesign the website to improve message clarity, trust signals, and conversion outcomes while preserving brand consistency.",
+            "scope": [
+                "Current-site UX and conversion audit",
+                "Information architecture and page hierarchy updates",
+                "Responsive UI design for key templates",
+                "Front-end implementation and CMS readiness",
+                "Quality assurance and pre-launch refinement",
+            ],
+            "deliverables": [
+                "Audit findings and redesign direction document",
+                "Approved desktop and mobile page designs",
+                "Implemented responsive template set",
+                "CMS-ready content structure and components",
+                "Launch checklist with QA summary",
+            ],
+            "milestones": [
+                "Discovery and redesign direction approval",
+                "Design system and template production",
+                "Build, QA, and revision cycle",
+                "Launch handover and optimization notes",
+            ],
+            "timeline": "8-10 weeks",
+            "assumptions": "Client supplies final copy and brand assets within agreed review windows.",
+            "risks": "Delayed content feedback may shift design approval and launch dates.",
+        },
+        "internal-tools": {
+            "category": "Internal Tools",
+            "name": "Internal Dashboard Template",
+            "description": "For internal operations dashboards with role-based visibility and practical workflow automation.",
+            "summary": "Build an internal dashboard that centralizes operational visibility and speeds up recurring team workflows.",
+            "scope": [
+                "Workflow discovery and internal role mapping",
+                "Dashboard views for core operational metrics",
+                "Data table, filter, and export functionality",
+                "Role-based access and activity audit trails",
+                "User testing and rollout readiness",
+            ],
+            "deliverables": [
+                "Workflow specification and UI planning assets",
+                "Operational dashboard with core modules",
+                "Role-based permissions and access controls",
+                "Data export and reporting setup",
+                "Admin onboarding and handover documentation",
+            ],
+            "milestones": [
+                "Discovery and operational requirements mapping",
+                "Dashboard implementation and integration",
+                "Testing, acceptance, and refinements",
+                "Rollout, training, and support handover",
+            ],
+            "timeline": "8-12 weeks",
+            "assumptions": "Internal stakeholders provide sample data and testing feedback on schedule.",
+            "risks": "Data source inconsistencies may require additional integration effort.",
+        },
+        "mobile-app": {
+            "category": "Mobile App",
+            "name": "Mobile App Launch Template",
+            "description": "For mobile app projects focused on core user journeys, release readiness, and early adoption.",
+            "summary": "Deliver a mobile app focused on high-priority user journeys, reliable release quality, and clear launch execution.",
+            "scope": [
+                "User journey mapping and feature prioritization",
+                "UI design and interaction flow for key screens",
+                "Core app feature implementation",
+                "Backend/API integration and quality validation",
+                "Release preparation and handover support",
+            ],
+            "deliverables": [
+                "Finalized mobile user journey specification",
+                "Production-ready app for core workflows",
+                "Integrated backend services and data flows",
+                "QA report and release checklist",
+                "Launch support and handover guidance",
+            ],
+            "milestones": [
+                "Planning and UX direction alignment",
+                "Core build and feature validation",
+                "QA, performance, and release prep",
+                "Launch and post-release handover",
+            ],
+            "timeline": "10-14 weeks",
+            "assumptions": "App store assets and compliance inputs are provided during release planning.",
+            "risks": "Third-party SDK or app-review delays can impact go-live timing.",
+        },
+        "marketing": {
+            "category": "Marketing",
+            "name": "Marketing Campaign Template",
+            "description": "For campaign execution with clear creative assets, launch phases, and performance reporting.",
+            "summary": "Plan and execute a focused campaign with clear messaging, production deliverables, and measurable performance goals.",
+            "scope": [
+                "Campaign strategy and audience alignment",
+                "Messaging framework and creative direction",
+                "Asset production and channel setup",
+                "Launch cadence and optimization cycle",
+                "Performance reporting and next-step planning",
+            ],
+            "deliverables": [
+                "Campaign strategy brief and execution roadmap",
+                "Core copy and visual creative assets",
+                "Channel launch setup and tracking plan",
+                "Performance dashboard and insight summary",
+                "Optimization recommendations for next cycle",
+            ],
+            "milestones": [
+                "Strategy alignment and message approval",
+                "Creative production and channel setup",
+                "Campaign launch and optimization pass",
+                "Reporting and iteration planning",
+            ],
+            "timeline": "4-6 weeks",
+            "assumptions": "Brand approvals and legal checks are completed within planned timelines.",
+            "risks": "Delayed approvals can reduce media efficiency and compress optimization time.",
+        },
+        "general": {
+            "category": "General",
+            "name": "Custom Proposal Template",
+            "description": "For multi-phase delivery projects that need clear structure, milestones, and practical handover.",
+            "summary": "Create a structured proposal plan with clear scope boundaries, tangible deliverables, and a realistic delivery sequence.",
+            "scope": [
+                "Discovery and requirement alignment",
+                "Solution planning and execution framework",
+                "Core implementation of agreed priorities",
+                "Quality review and revision cycle",
+                "Launch readiness and handover planning",
+            ],
+            "deliverables": [
+                "Scope and execution plan",
+                "Implemented core deliverables",
+                "QA summary and revision log",
+                "Final handover package",
+                "Post-launch support recommendations",
+            ],
+            "milestones": [
+                "Discovery and direction confirmation",
+                "Build and review cycle",
+                "Testing and refinement",
+                "Launch and handover",
+            ],
+            "timeline": "6-10 weeks",
+            "assumptions": "Stakeholders provide timely feedback and required assets at each review stage.",
+            "risks": "Late requirement changes may affect delivery timeline and effort.",
+        },
+    }
+
+    return blueprints.get(archetype, blueprints["general"])
+
+
+def _match_existing_category(preferred: str, existing_categories: list[str]) -> str:
+    normalized_preferred = preferred.strip().lower()
+    for category in existing_categories:
+        if category.strip().lower() == normalized_preferred:
+            return category.strip()
+    return preferred.strip()
+
+
 def _build_template_prompt(user_prompt: str, existing_categories: list[str]) -> str:
     schema = {
         "name": "string",
@@ -412,10 +718,29 @@ Style constraints:
 - Avoid vague buzzwords and generic filler.
 - Do not invent legal/compliance guarantees.
 - Keep each section ready for real proposal use without heavy editing.
+- Do not copy the user prompt verbatim into section content.
+- If the user prompt is short or vague, infer a plausible professional template and add concrete details.
+- Never output placeholders like "I don't know", "something", "TBD", or "etc".
 
 User prompt:
 {user_prompt.strip()}
 """.strip()
+
+
+def _expand_sparse_template_prompt(user_prompt: str) -> str:
+    normalized_prompt = _normalize_space(user_prompt)
+    if not normalized_prompt:
+        return normalized_prompt
+
+    if len(normalized_prompt.split()) >= 5 and not _is_low_signal_text(normalized_prompt):
+        return normalized_prompt
+
+    archetype = _detect_template_archetype(normalized_prompt)
+    blueprint = _get_template_blueprint(archetype)
+    return (
+        f"{normalized_prompt}. Use a {blueprint['category']} template style with concrete scope, "
+        f"deliverables, milestones, and a realistic {blueprint['timeline']} timeline."
+    )
 
 
 def _normalize_multiline_text(value: Any) -> str:
@@ -431,27 +756,19 @@ def _normalize_multiline_text(value: Any) -> str:
 
 
 def _normalize_bullet_lines(value: Any, *, max_items: int) -> str:
-    lines = []
-
-    if isinstance(value, list):
-        for item in value:
-            cleaned = str(item).strip().lstrip("-").lstrip("*").strip()
-            if cleaned:
-                lines.append(cleaned)
-    elif isinstance(value, str):
-        for line in value.splitlines():
-            cleaned = line.strip().lstrip("-").lstrip("*").strip()
-            if cleaned:
-                lines.append(cleaned)
+    lines = _extract_lines(value)
 
     unique_lines: list[str] = []
     seen = set()
     for line in lines:
-        lowered = line.lower()
+        normalized = _normalize_space(line)
+        if _is_low_signal_text(normalized):
+            continue
+        lowered = normalized.lower()
         if lowered in seen:
             continue
         seen.add(lowered)
-        unique_lines.append(_truncate_words(line, 18))
+        unique_lines.append(_truncate_words(normalized, 18))
 
     return "\n".join([f"- {line}" for line in unique_lines[:max_items]])
 
@@ -481,80 +798,142 @@ def _normalize_milestone_lines(value: Any, *, max_items: int) -> str:
     unique_lines: list[str] = []
     seen = set()
     for line in lines:
-        lowered = line.lower()
+        normalized = _normalize_space(line)
+        if _is_low_signal_text(normalized):
+            continue
+        lowered = normalized.lower()
         if lowered in seen:
             continue
         seen.add(lowered)
-        unique_lines.append(_truncate_words(line, 22))
+        unique_lines.append(_truncate_words(normalized, 22))
 
     return "\n".join(unique_lines[:max_items])
 
 
 def _fallback_template_name(user_prompt: str) -> str:
+    archetype = _detect_template_archetype(user_prompt)
+    blueprint = _get_template_blueprint(archetype)
     cleaned = user_prompt.replace("-", " ").replace("_", " ").strip()
     words = [word for word in cleaned.split() if word.strip()]
-    if not words:
-        return "Custom Proposal Template"
+
+    if len(words) < 3 or _is_low_signal_text(cleaned):
+        return str(blueprint["name"])
 
     base = " ".join(words[:4]).strip().title()
-    if "template" not in base.lower():
+    if "template" not in base.lower() and "proposal" not in base.lower():
         base = f"{base} Template"
     return base
 
 
 def _fallback_template_category(user_prompt: str, existing_categories: list[str]) -> str:
+    archetype = _detect_template_archetype(user_prompt)
+    preferred_category = str(_get_template_blueprint(archetype)["category"])
+    matched_existing = _match_existing_category(preferred_category, existing_categories)
+
     lowered_prompt = user_prompt.lower()
     for category in existing_categories:
         if category.lower() in lowered_prompt:
             return category
-    return "General"
+
+    return matched_existing
 
 
-def _fallback_template_sections() -> dict[str, dict[str, Any]]:
+def _fallback_template_sections(archetype: str) -> dict[str, dict[str, Any]]:
+    blueprint = _get_template_blueprint(archetype)
     return {
         "summary": {
             "included": True,
-            "content": (
-                "Deliver a focused project proposal with clear business outcomes, delivery boundaries, and practical execution planning."
-            ),
+            "content": str(blueprint["summary"]),
         },
         "scope": {
             "included": True,
-            "content": (
-                "- Discovery and requirement alignment\n"
-                "- Solution planning and technical approach\n"
-                "- Core implementation of agreed workflows\n"
-                "- QA, revisions, and launch readiness"
-            ),
+            "content": "\n".join([f"- {item}" for item in blueprint["scope"]]),
         },
         "deliverables": {
             "included": True,
-            "content": (
-                "- Finalized scope and delivery plan\n"
-                "- Implemented core workflows\n"
-                "- QA validation and revision pass\n"
-                "- Launch handover package"
-            ),
+            "content": "\n".join([f"- {item}" for item in blueprint["deliverables"]]),
         },
         "milestones": {
             "included": True,
-            "content": (
-                "Discovery and direction confirmation\n"
-                "Build and review iterations\n"
-                "Testing and final refinements\n"
-                "Launch and handover"
-            ),
+            "content": "\n".join(blueprint["milestones"]),
         },
-        "timeline": {"included": True, "content": "6-10 weeks"},
+        "timeline": {"included": True, "content": str(blueprint["timeline"])},
         "assumptions": {
             "included": False,
-            "content": "Client provides timely feedback and required assets during planned review windows.",
+            "content": str(blueprint["assumptions"]),
         },
         "risks": {
             "included": False,
-            "content": "Scope changes after approval may impact timeline and budget.",
+            "content": str(blueprint["risks"]),
         },
     }
+
+
+def _merge_with_fallback_items(
+    primary_items: list[str],
+    fallback_items: list[str],
+    *,
+    min_items: int,
+    max_items: int,
+    max_words: int,
+) -> list[str]:
+    merged: list[str] = []
+    seen = set()
+
+    for source_items in [primary_items, fallback_items]:
+        for item in source_items:
+            normalized = _normalize_space(item)
+            if _is_low_signal_text(normalized):
+                continue
+            lowered = normalized.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            merged.append(_truncate_words(normalized, max_words))
+            if len(merged) >= max_items:
+                break
+        if len(merged) >= max_items:
+            break
+
+    if len(merged) < min_items:
+        for fallback_item in fallback_items:
+            normalized = _normalize_space(fallback_item)
+            lowered = normalized.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            merged.append(_truncate_words(normalized, max_words))
+            if len(merged) >= min_items:
+                break
+
+    return merged[:max_items]
+
+
+def _build_summary_fallback(user_prompt: str, archetype: str) -> str:
+    blueprint = _get_template_blueprint(archetype)
+    normalized_prompt = _normalize_space(user_prompt)
+
+    if _is_low_signal_text(normalized_prompt) or len(normalized_prompt.split()) < 4:
+        return str(blueprint["summary"])
+
+    return _truncate_words(
+        f"{blueprint['summary']} Focus area: {normalized_prompt}.",
+        75,
+    )
+
+
+def _is_valid_timeline_text(value: str) -> bool:
+    text = _normalize_space(value).lower()
+    if not text or _is_low_signal_text(text):
+        return False
+
+    duration_tokens = ["day", "days", "week", "weeks", "month", "months", "quarter", "quarters"]
+    has_duration_token = any(token in text for token in duration_tokens)
+    has_number = any(char.isdigit() for char in text) or any(
+        token in text for token in ["one", "two", "three", "four", "five", "six", "eight", "ten", "twelve"]
+    )
+
+    return has_duration_token and has_number
 
 
 def normalize_generated_template_draft(
@@ -564,26 +943,24 @@ def normalize_generated_template_draft(
     existing_categories: list[str] | None = None,
 ) -> dict[str, Any]:
     categories = [str(category).strip() for category in (existing_categories or []) if str(category).strip()]
-    fallback_sections = _fallback_template_sections()
+    archetype = _detect_template_archetype(user_prompt)
+    blueprint = _get_template_blueprint(archetype)
+    fallback_sections = _fallback_template_sections(archetype)
 
     name = " ".join(str(data.get("name", "")).split()).strip()
-    if not name:
+    if not name or _is_low_signal_text(name) or name.lower() == _normalize_space(user_prompt).lower():
         name = _fallback_template_name(user_prompt)
     name = _truncate_words(name, 8)
 
     description = " ".join(str(data.get("description", "")).split()).strip()
-    if not description:
-        description = (
-            f"Reusable template for {user_prompt.strip().lower()} projects with clear scope, deliverables, milestones, and timeline guidance."
-            if user_prompt.strip()
-            else "Reusable proposal template with clear scope, deliverables, milestones, and timeline guidance."
-        )
+    if not description or _is_low_signal_text(description):
+        description = str(blueprint["description"])
     description = _truncate_words(description, 28)
 
     category = " ".join(str(data.get("category", "")).split()).strip()
-    if not category:
+    if not category or _is_low_signal_text(category):
         category = _fallback_template_category(user_prompt, categories)
-    category = _truncate_words(category, 4)
+    category = _truncate_words(_match_existing_category(category, categories), 4)
 
     raw_sections = data.get("sections", {})
     if not isinstance(raw_sections, dict):
@@ -606,17 +983,41 @@ def normalize_generated_template_draft(
             content_value = raw_section.get("content", "")
 
         if key in {"scope", "deliverables"}:
-            content = _normalize_bullet_lines(content_value, max_items=6)
+            generated_items = [line.lstrip("-").strip() for line in _extract_lines(_normalize_bullet_lines(content_value, max_items=8))]
+            fallback_items = list(blueprint[key])
+            merged_items = _merge_with_fallback_items(
+                generated_items,
+                fallback_items,
+                min_items=4,
+                max_items=6,
+                max_words=18,
+            )
+            content = "\n".join([f"- {item}" for item in merged_items])
         elif key == "milestones":
-            content = _normalize_milestone_lines(content_value, max_items=5)
+            generated_items = _extract_lines(_normalize_milestone_lines(content_value, max_items=6))
+            fallback_items = list(blueprint["milestones"])
+            merged_items = _merge_with_fallback_items(
+                generated_items,
+                fallback_items,
+                min_items=3,
+                max_items=5,
+                max_words=22,
+            )
+            content = "\n".join(merged_items)
         elif key == "timeline":
             content = " ".join(_normalize_multiline_text(content_value).split()).strip()
+            if not _is_valid_timeline_text(content) or len(content.split()) > 6:
+                content = str(blueprint["timeline"])
         elif key == "summary":
             content = " ".join(_normalize_multiline_text(content_value).split()).strip()
             content = _truncate_words(content, 70)
+            if _is_low_signal_text(content) or len(content.split()) < 10:
+                content = _build_summary_fallback(user_prompt, archetype)
         else:
             content = " ".join(_normalize_multiline_text(content_value).split()).strip()
             content = _truncate_words(content, 20)
+            if _is_low_signal_text(content):
+                content = str(blueprint[key])
 
         if not content:
             content = str(fallback["content"])
@@ -693,8 +1094,9 @@ def generate_template_draft(user_prompt: str, existing_categories: list[str] | N
         if str(category).strip()
     ]
 
-    prompt = _build_template_prompt(normalized_prompt, categories)
-    parsed = _call_gemini_json_response(prompt, temperature=0.35, max_output_tokens=1100)
+    expanded_prompt = _expand_sparse_template_prompt(normalized_prompt)
+    prompt = _build_template_prompt(expanded_prompt, categories)
+    parsed = _call_gemini_json_response(prompt, temperature=0.4, max_output_tokens=1200)
     return normalize_generated_template_draft(
         parsed,
         user_prompt=normalized_prompt,
