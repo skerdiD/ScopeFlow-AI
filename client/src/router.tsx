@@ -6,6 +6,7 @@ import { LoginPage } from "@/pages/login-page";
 import { SignupPage } from "@/pages/signup-page";
 import { DashboardPage } from "@/pages/dashboard-page";
 import { NewProjectPage } from "@/pages/new-project-page";
+import { NewTemplatePage } from "@/pages/new-template-page";
 import { ProjectDetailsPage } from "@/pages/project-details-page";
 import { TemplatesPage } from "@/pages/templates-page";
 import { ActivityPage } from "@/pages/activity-page";
@@ -57,6 +58,10 @@ export const router = createBrowserRouter([
       {
         path: "/templates",
         element: <TemplatesPage />
+      },
+      {
+        path: "/templates/new",
+        element: <NewTemplatePage />
       },
       {
         path: "/activity",

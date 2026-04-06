@@ -23,11 +23,11 @@ import {
   type TemplateDraftInput
 } from "@/lib/templates";
 
-type TemplateDialogMode = "create" | "edit" | null;
+type TemplateDialogMode = "edit" | null;
 
 export function TemplatesPage() {
   const navigate = useNavigate();
-  const { templates, loading, createTemplate, updateTemplate, duplicateTemplate, removeTemplate } = useTemplates();
+  const { templates, loading, updateTemplate, duplicateTemplate, removeTemplate } = useTemplates();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -58,8 +58,7 @@ export function TemplatesPage() {
   }, [categoryFilter, searchQuery, templates]);
 
   function openCreateDialog() {
-    setDialogMode("create");
-    setActiveTemplate(null);
+    navigate("/templates/new");
   }
 
   function openEditDialog(template: ProposalTemplate) {
@@ -76,20 +75,7 @@ export function TemplatesPage() {
     try {
       setSubmitting(true);
 
-      if (dialogMode === "create") {
-        const createdTemplate = createTemplate(draft);
-        logActivity({
-          type: "template_created",
-          title: "Template created",
-          description: `${createdTemplate.name} added to the template library.`,
-          actor: "user",
-          projectName: createdTemplate.name,
-          metadata: {
-            category: createdTemplate.category
-          }
-        });
-        toast.success("Template created.");
-      } else if (dialogMode === "edit" && activeTemplate) {
+      if (dialogMode === "edit" && activeTemplate) {
         updateTemplate(activeTemplate.id, draft);
         toast.success("Template updated.");
       }
@@ -179,7 +165,7 @@ export function TemplatesPage() {
 
           <Button onClick={openCreateDialog}>
             <PlusCircle className="size-4" />
-            Create Template
+            Add Template
           </Button>
         </div>
       </section>
@@ -238,7 +224,7 @@ export function TemplatesPage() {
             </p>
             <Button className="mt-6" onClick={openCreateDialog}>
               <PlusCircle className="size-4" />
-              Create First Template
+              Add First Template
             </Button>
           </CardContent>
         </Card>
@@ -292,17 +278,13 @@ export function TemplatesPage() {
       <Dialog open={dialogMode !== null} onOpenChange={(open) => (!open ? closeTemplateDialog() : null)}>
         <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-h-[88vh] sm:max-w-3xl">
           <DialogHeader className="shrink-0 border-b px-5 py-4 sm:px-6">
-            <DialogTitle>{dialogMode === "create" ? "Create Template" : "Edit Template"}</DialogTitle>
-            <DialogDescription>
-              {dialogMode === "create"
-                ? "Define reusable sections and defaults for future proposals."
-                : "Refine this template and keep your proposal structure consistent."}
-            </DialogDescription>
+            <DialogTitle>Edit Template</DialogTitle>
+            <DialogDescription>Refine this template and keep your proposal structure consistent.</DialogDescription>
           </DialogHeader>
 
           <TemplateForm
-            mode={dialogMode === "create" ? "create" : "edit"}
-            initialTemplate={dialogMode === "edit" ? activeTemplate : null}
+            mode="edit"
+            initialTemplate={activeTemplate}
             categories={categoryOptions.filter((category) => category !== "all")}
             submitting={submitting}
             onCancel={closeTemplateDialog}

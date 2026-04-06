@@ -1,3 +1,5 @@
+import type { TemplateDraftInput } from "@/lib/templates";
+
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
   import.meta.env.VITE_API_URL ??
@@ -89,6 +91,11 @@ export type GenerateProposalPayload = {
   call_notes: string;
 };
 
+export type GenerateTemplatePayload = {
+  user_prompt: string;
+  existing_categories?: string[];
+};
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let message = "Request failed.";
@@ -138,6 +145,18 @@ export async function generateProposal(payload: GenerateProposalPayload): Promis
   });
 
   return handleResponse<ProposalProject>(response);
+}
+
+export async function generateTemplateDraft(payload: GenerateTemplatePayload): Promise<TemplateDraftInput> {
+  const response = await fetch(`${API_BASE_URL}/generate-template/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  return handleResponse<TemplateDraftInput>(response);
 }
 
 export async function updateProject(id: string, payload: ProposalProjectPayload): Promise<ProposalProject> {

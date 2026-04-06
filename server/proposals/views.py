@@ -11,6 +11,7 @@ from .services import (
     GeminiApiRequestError,
     GeminiApiResponseError,
     GeminiQuotaExceededError,
+    generate_template_draft,
     generate_structured_proposal,
 )
 
@@ -343,6 +344,34 @@ def generate_proposal(request):
     create_project_version(project, source="generate", changed_sections=SECTION_FIELDS)
 
     return Response(ProposalProjectSerializer(project).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def generate_template(request):
+    user_prompt = str(request.data.get("user_prompt", "")).strip()
+    existing_categories = normalize_string_list(request.data.get("existing_categories", []))
+
+    if not user_prompt:
+        return Response({"detail": "user_prompt is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        generated_template = generate_template_draft(
+            user_prompt=user_prompt,
+            existing_categories=existing_categories,
+        )
+    except GeminiApiKeyMissingError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except GeminiApiKeyLeakedError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except GeminiQuotaExceededError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+    except GeminiApiRequestError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+    except GeminiApiResponseError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+
+    return Response(generated_template, status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])

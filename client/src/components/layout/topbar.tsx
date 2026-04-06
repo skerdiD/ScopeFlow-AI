@@ -40,6 +40,13 @@ function getPageContext(pathname: string): PageContext {
   }
 
   if (pathname.startsWith("/templates")) {
+    if (pathname === "/templates/new") {
+      return {
+        title: "Add Template",
+        subtitle: "Create reusable proposal templates manually or with AI-generated draft content."
+      };
+    }
+
     return {
       title: "Templates",
       subtitle: "Maintain reusable proposal structures for consistent delivery."

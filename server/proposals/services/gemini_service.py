@@ -134,6 +134,85 @@ def _clean_json_text(raw_text: str) -> dict[str, Any]:
         raise GeminiApiResponseError("Gemini returned invalid JSON.")
 
 
+def _call_gemini_json_response(
+    prompt: str,
+    *,
+    temperature: float,
+    max_output_tokens: int,
+) -> dict[str, Any]:
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        raise GeminiApiKeyMissingError("GEMINI_API_KEY is missing.")
+
+    model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+    url = f"{GEMINI_API_BASE}/{model}:generateContent?key={api_key}"
+
+    request_body = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": prompt}],
+            }
+        ],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_output_tokens,
+            "responseMimeType": "application/json",
+        },
+    }
+
+    try:
+        response = requests.post(url, json=request_body, timeout=75)
+    except requests.RequestException as exc:
+        raise GeminiApiRequestError(f"Failed to call Gemini API: {str(exc)}") from exc
+
+    if not response.ok:
+        api_message = ""
+        try:
+            error_payload = response.json()
+            api_message = str(error_payload.get("error", {}).get("message", "")).strip()
+        except ValueError:
+            api_message = response.text[:500]
+
+        normalized_message = api_message.lower()
+        if response.status_code == 429 or "quota exceeded" in normalized_message:
+            raise GeminiQuotaExceededError(
+                "Gemini quota exceeded for this API project. Enable billing or use a project with available quota."
+            )
+
+        if response.status_code == 403 and "reported as leaked" in normalized_message:
+            raise GeminiApiKeyLeakedError(
+                "GEMINI_API_KEY has been blocked as leaked. Rotate it in Google AI Studio and update server/.env."
+            )
+
+        details = api_message or response.text[:500]
+        raise GeminiApiRequestError(
+            f"Gemini API request failed with status {response.status_code}. {details}"
+        )
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise GeminiApiResponseError("Gemini API response was not valid JSON.") from exc
+
+    candidates = payload.get("candidates", [])
+    response_text = ""
+
+    for candidate in candidates:
+        content = candidate.get("content", {})
+        parts = content.get("parts", [])
+        texts = [str(part.get("text", "")) for part in parts if isinstance(part, dict)]
+        joined = "\n".join(texts).strip()
+        if joined:
+            response_text = joined
+            break
+
+    if not response_text:
+        raise GeminiApiResponseError("Gemini returned an empty response.")
+
+    return _clean_json_text(response_text)
+
+
 def _truncate_words(text: str, max_words: int) -> str:
     words = text.split()
     if len(words) <= max_words:
@@ -258,6 +337,311 @@ def _fallback_risks(intake: dict[str, str]) -> list[str]:
     return defaults
 
 
+def _build_template_prompt(user_prompt: str, existing_categories: list[str]) -> str:
+    schema = {
+        "name": "string",
+        "description": "string",
+        "category": "string",
+        "sections": {
+            "summary": {"included": "boolean", "content": "string"},
+            "scope": {"included": "boolean", "content": "string"},
+            "deliverables": {"included": "boolean", "content": "string"},
+            "milestones": {"included": "boolean", "content": "string"},
+            "timeline": {"included": "boolean", "content": "string"},
+            "assumptions": {"included": "boolean", "content": "string"},
+            "risks": {"included": "boolean", "content": "string"},
+        },
+    }
+
+    category_hint = ", ".join(existing_categories[:12]).strip()
+    category_rule = (
+        f"Prefer one of these exact categories when it fits: {category_hint}."
+        if category_hint
+        else "Choose a concise category name."
+    )
+
+    return f"""
+You are a senior proposal strategist creating reusable proposal templates.
+Transform the short user prompt into a polished template draft with practical default content.
+Write with the same concise and realistic tone used in modern agency proposal templates.
+
+Return valid JSON only. No markdown. No code fences. No commentary.
+
+Required JSON shape:
+{json.dumps(schema)}
+
+Rules:
+- name:
+  - 2 to 5 words.
+  - Should read like a reusable template title.
+  - Include "Proposal" only when natural.
+- description:
+  - One sentence.
+  - Explain when this template should be used.
+  - Keep it specific and concise.
+- category:
+  - Short and clear project type.
+  - {category_rule}
+- sections.summary:
+  - included must be true.
+  - One concise paragraph describing the project intent and outcome.
+- sections.scope:
+  - included must be true.
+  - 4 to 6 bullet points using "- " prefixes.
+  - Each line is a concrete workstream.
+- sections.deliverables:
+  - included must be true.
+  - 4 to 6 bullet points using "- " prefixes.
+  - Tangible outputs only.
+- sections.milestones:
+  - included must be true.
+  - 3 to 5 short lines in execution order.
+  - No numbering.
+- sections.timeline:
+  - included must be true.
+  - Short duration text like "6-8 weeks" or "10-12 weeks".
+- sections.assumptions:
+  - include only when useful.
+  - If included, one concise sentence.
+- sections.risks:
+  - include when useful.
+  - If included, one concise sentence.
+
+Style constraints:
+- Keep content practical and believable.
+- Avoid vague buzzwords and generic filler.
+- Do not invent legal/compliance guarantees.
+- Keep each section ready for real proposal use without heavy editing.
+
+User prompt:
+{user_prompt.strip()}
+""".strip()
+
+
+def _normalize_multiline_text(value: Any) -> str:
+    if isinstance(value, str):
+        lines = value.splitlines()
+    elif isinstance(value, list):
+        lines = [str(item) for item in value]
+    else:
+        lines = []
+
+    cleaned_lines = [line.strip() for line in lines if str(line).strip()]
+    return "\n".join(cleaned_lines).strip()
+
+
+def _normalize_bullet_lines(value: Any, *, max_items: int) -> str:
+    lines = []
+
+    if isinstance(value, list):
+        for item in value:
+            cleaned = str(item).strip().lstrip("-").lstrip("*").strip()
+            if cleaned:
+                lines.append(cleaned)
+    elif isinstance(value, str):
+        for line in value.splitlines():
+            cleaned = line.strip().lstrip("-").lstrip("*").strip()
+            if cleaned:
+                lines.append(cleaned)
+
+    unique_lines: list[str] = []
+    seen = set()
+    for line in lines:
+        lowered = line.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        unique_lines.append(_truncate_words(line, 18))
+
+    return "\n".join([f"- {line}" for line in unique_lines[:max_items]])
+
+
+def _normalize_milestone_lines(value: Any, *, max_items: int) -> str:
+    lines = []
+
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                title = str(item.get("title", "")).strip()
+                description = str(item.get("description", "")).strip()
+                if title and description:
+                    lines.append(f"{title}: {description}")
+                elif title:
+                    lines.append(title)
+            else:
+                cleaned = str(item).strip().lstrip("-").lstrip("*").strip()
+                if cleaned:
+                    lines.append(cleaned)
+    elif isinstance(value, str):
+        for line in value.splitlines():
+            cleaned = line.strip().lstrip("-").lstrip("*").strip()
+            if cleaned:
+                lines.append(cleaned)
+
+    unique_lines: list[str] = []
+    seen = set()
+    for line in lines:
+        lowered = line.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        unique_lines.append(_truncate_words(line, 22))
+
+    return "\n".join(unique_lines[:max_items])
+
+
+def _fallback_template_name(user_prompt: str) -> str:
+    cleaned = user_prompt.replace("-", " ").replace("_", " ").strip()
+    words = [word for word in cleaned.split() if word.strip()]
+    if not words:
+        return "Custom Proposal Template"
+
+    base = " ".join(words[:4]).strip().title()
+    if "template" not in base.lower():
+        base = f"{base} Template"
+    return base
+
+
+def _fallback_template_category(user_prompt: str, existing_categories: list[str]) -> str:
+    lowered_prompt = user_prompt.lower()
+    for category in existing_categories:
+        if category.lower() in lowered_prompt:
+            return category
+    return "General"
+
+
+def _fallback_template_sections() -> dict[str, dict[str, Any]]:
+    return {
+        "summary": {
+            "included": True,
+            "content": (
+                "Deliver a focused project proposal with clear business outcomes, delivery boundaries, and practical execution planning."
+            ),
+        },
+        "scope": {
+            "included": True,
+            "content": (
+                "- Discovery and requirement alignment\n"
+                "- Solution planning and technical approach\n"
+                "- Core implementation of agreed workflows\n"
+                "- QA, revisions, and launch readiness"
+            ),
+        },
+        "deliverables": {
+            "included": True,
+            "content": (
+                "- Finalized scope and delivery plan\n"
+                "- Implemented core workflows\n"
+                "- QA validation and revision pass\n"
+                "- Launch handover package"
+            ),
+        },
+        "milestones": {
+            "included": True,
+            "content": (
+                "Discovery and direction confirmation\n"
+                "Build and review iterations\n"
+                "Testing and final refinements\n"
+                "Launch and handover"
+            ),
+        },
+        "timeline": {"included": True, "content": "6-10 weeks"},
+        "assumptions": {
+            "included": False,
+            "content": "Client provides timely feedback and required assets during planned review windows.",
+        },
+        "risks": {
+            "included": False,
+            "content": "Scope changes after approval may impact timeline and budget.",
+        },
+    }
+
+
+def normalize_generated_template_draft(
+    data: dict[str, Any],
+    *,
+    user_prompt: str,
+    existing_categories: list[str] | None = None,
+) -> dict[str, Any]:
+    categories = [str(category).strip() for category in (existing_categories or []) if str(category).strip()]
+    fallback_sections = _fallback_template_sections()
+
+    name = " ".join(str(data.get("name", "")).split()).strip()
+    if not name:
+        name = _fallback_template_name(user_prompt)
+    name = _truncate_words(name, 8)
+
+    description = " ".join(str(data.get("description", "")).split()).strip()
+    if not description:
+        description = (
+            f"Reusable template for {user_prompt.strip().lower()} projects with clear scope, deliverables, milestones, and timeline guidance."
+            if user_prompt.strip()
+            else "Reusable proposal template with clear scope, deliverables, milestones, and timeline guidance."
+        )
+    description = _truncate_words(description, 28)
+
+    category = " ".join(str(data.get("category", "")).split()).strip()
+    if not category:
+        category = _fallback_template_category(user_prompt, categories)
+    category = _truncate_words(category, 4)
+
+    raw_sections = data.get("sections", {})
+    if not isinstance(raw_sections, dict):
+        raw_sections = {}
+
+    normalized_sections: dict[str, dict[str, Any]] = {}
+    required_keys = {"summary", "scope", "deliverables", "milestones", "timeline"}
+
+    for key in ["summary", "scope", "deliverables", "milestones", "timeline", "assumptions", "risks"]:
+        fallback = fallback_sections[key]
+        raw_section = raw_sections.get(key, {})
+
+        included = bool(fallback["included"])
+        content_value: Any = raw_section
+        has_explicit_included = False
+
+        if isinstance(raw_section, dict):
+            has_explicit_included = isinstance(raw_section.get("included"), bool)
+            included = bool(raw_section.get("included", included))
+            content_value = raw_section.get("content", "")
+
+        if key in {"scope", "deliverables"}:
+            content = _normalize_bullet_lines(content_value, max_items=6)
+        elif key == "milestones":
+            content = _normalize_milestone_lines(content_value, max_items=5)
+        elif key == "timeline":
+            content = " ".join(_normalize_multiline_text(content_value).split()).strip()
+        elif key == "summary":
+            content = " ".join(_normalize_multiline_text(content_value).split()).strip()
+            content = _truncate_words(content, 70)
+        else:
+            content = " ".join(_normalize_multiline_text(content_value).split()).strip()
+            content = _truncate_words(content, 20)
+
+        if not content:
+            content = str(fallback["content"])
+
+        if key in required_keys:
+            included = True
+
+        if key in {"assumptions", "risks"}:
+            if not has_explicit_included and content.strip():
+                included = True
+            included = included and bool(content.strip())
+
+        normalized_sections[key] = {
+            "included": included,
+            "content": content.strip(),
+        }
+
+    return {
+        "name": name,
+        "description": description,
+        "category": category,
+        "sections": normalized_sections,
+    }
+
+
 def normalize_generated_proposal(data: dict[str, Any], intake: dict[str, str] | None = None) -> dict[str, Any]:
     summary = " ".join(str(data.get("summary", "")).split()).strip()
     if not summary:
@@ -293,76 +677,26 @@ def normalize_generated_proposal(data: dict[str, Any], intake: dict[str, str] | 
 
 
 def generate_structured_proposal(intake: dict[str, str]) -> dict[str, Any]:
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    if not api_key:
-        raise GeminiApiKeyMissingError("GEMINI_API_KEY is missing.")
-
-    model = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
-    url = f"{GEMINI_API_BASE}/{model}:generateContent?key={api_key}"
     prompt = _build_prompt(intake)
-
-    request_body = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": prompt}],
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": 900,
-            "responseMimeType": "application/json",
-        },
-    }
-
-    try:
-        response = requests.post(url, json=request_body, timeout=75)
-    except requests.RequestException as exc:
-        raise GeminiApiRequestError(f"Failed to call Gemini API: {str(exc)}") from exc
-
-    if not response.ok:
-        api_message = ""
-        try:
-            error_payload = response.json()
-            api_message = str(error_payload.get("error", {}).get("message", "")).strip()
-        except ValueError:
-            api_message = response.text[:500]
-
-        normalized_message = api_message.lower()
-        if response.status_code == 429 or "quota exceeded" in normalized_message:
-            raise GeminiQuotaExceededError(
-                "Gemini quota exceeded for this API project. Enable billing or use a project with available quota."
-            )
-
-        if response.status_code == 403 and "reported as leaked" in normalized_message:
-            raise GeminiApiKeyLeakedError(
-                "GEMINI_API_KEY has been blocked as leaked. Rotate it in Google AI Studio and update server/.env."
-            )
-
-        details = api_message or response.text[:500]
-        raise GeminiApiRequestError(
-            f"Gemini API request failed with status {response.status_code}. {details}"
-        )
-
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise GeminiApiResponseError("Gemini API response was not valid JSON.") from exc
-
-    candidates = payload.get("candidates", [])
-    response_text = ""
-
-    for candidate in candidates:
-        content = candidate.get("content", {})
-        parts = content.get("parts", [])
-        texts = [str(part.get("text", "")) for part in parts if isinstance(part, dict)]
-        joined = "\n".join(texts).strip()
-        if joined:
-            response_text = joined
-            break
-
-    if not response_text:
-        raise GeminiApiResponseError("Gemini returned an empty response.")
-
-    parsed = _clean_json_text(response_text)
+    parsed = _call_gemini_json_response(prompt, temperature=0.2, max_output_tokens=900)
     return normalize_generated_proposal(parsed, intake=intake)
+
+
+def generate_template_draft(user_prompt: str, existing_categories: list[str] | None = None) -> dict[str, Any]:
+    normalized_prompt = str(user_prompt).strip()
+    if not normalized_prompt:
+        raise GeminiApiResponseError("user_prompt is required.")
+
+    categories = [
+        str(category).strip()
+        for category in (existing_categories or [])
+        if str(category).strip()
+    ]
+
+    prompt = _build_template_prompt(normalized_prompt, categories)
+    parsed = _call_gemini_json_response(prompt, temperature=0.35, max_output_tokens=1100)
+    return normalize_generated_template_draft(
+        parsed,
+        user_prompt=normalized_prompt,
+        existing_categories=categories,
+    )

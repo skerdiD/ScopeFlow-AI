@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,8 @@ type TemplateFormProps = {
   submitting?: boolean;
   onCancel: () => void;
   onSubmit: (draft: TemplateDraftInput) => Promise<void> | void;
+  enableAiGenerator?: boolean;
+  onGenerateWithAi?: (prompt: string) => Promise<TemplateDraftInput>;
   className?: string;
 };
 
@@ -69,6 +71,17 @@ function createInitialExpandedSections(
   );
 }
 
+function createExpandedSectionsFromValues(sections: TemplateSections): Record<TemplateSectionKey, boolean> {
+  return TEMPLATE_SECTION_CONFIG.reduce(
+    (accumulator, section) => {
+      const sectionValue = sections[section.key];
+      accumulator[section.key] = Boolean(sectionValue?.included) || Boolean(sectionValue?.content?.trim());
+      return accumulator;
+    },
+    {} as Record<TemplateSectionKey, boolean>
+  );
+}
+
 function normalizeCategoryOptions(categories: string[]) {
   return [...new Set(categories.map((category) => category.trim()).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b)
@@ -82,6 +95,8 @@ export function TemplateForm({
   submitting = false,
   onCancel,
   onSubmit,
+  enableAiGenerator = false,
+  onGenerateWithAi,
   className
 }: TemplateFormProps) {
   const categoryOptions = useMemo(() => normalizeCategoryOptions(categories), [categories]);
@@ -93,6 +108,9 @@ export function TemplateForm({
     const initialCategory = createInitialValues(initialTemplate).category;
     return !initialCategory || !normalizeCategoryOptions(categories).includes(initialCategory);
   });
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   useEffect(() => {
     const initialValues = createInitialValues(initialTemplate);
@@ -100,6 +118,8 @@ export function TemplateForm({
     setExpandedSections(createInitialExpandedSections(initialTemplate));
     const incomingCategory = initialValues.category;
     setUseCustomCategory(!incomingCategory || !categoryOptions.includes(incomingCategory));
+    setAiPrompt("");
+    setAiError("");
   }, [initialTemplate, mode, categoryOptions]);
 
   const includedSectionsCount = useMemo(
@@ -172,9 +192,75 @@ export function TemplateForm({
     });
   }
 
+  async function handleGenerateWithAi() {
+    if (!enableAiGenerator || !onGenerateWithAi) {
+      return;
+    }
+
+    const prompt = aiPrompt.trim();
+    if (!prompt) {
+      setAiError("Please enter a short description before generating.");
+      return;
+    }
+
+    try {
+      setAiGenerating(true);
+      setAiError("");
+      const generated = await onGenerateWithAi(prompt);
+      const normalizedSections = createDefaultTemplateSections(generated.sections);
+      const generatedCategory = generated.category.trim();
+
+      setValues((current) => ({
+        ...current,
+        name: generated.name.trim() || current.name,
+        description: generated.description.trim() || current.description,
+        category: generatedCategory || current.category,
+        sections: normalizedSections
+      }));
+      setExpandedSections(createExpandedSectionsFromValues(normalizedSections));
+      setUseCustomCategory(!generatedCategory || !categoryOptions.includes(generatedCategory));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to generate template.";
+      setAiError(message);
+    } finally {
+      setAiGenerating(false);
+    }
+  }
+
   return (
     <form className={cn("flex min-h-0 flex-1 flex-col", className)} onSubmit={handleSubmit}>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4 sm:px-6">
+        {mode === "create" && enableAiGenerator && onGenerateWithAi ? (
+          <div className="space-y-3 rounded-xl border bg-muted/35 p-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold">Generate Template AI</h3>
+              <p className="text-xs text-muted-foreground">
+                Write a short prompt and AI will draft a full template like your sample library.
+              </p>
+            </div>
+
+            <Textarea
+              value={aiPrompt}
+              onChange={(event) => setAiPrompt(event.target.value)}
+              placeholder="Example: SEO landing page redesign for B2B SaaS with clear conversion flow"
+              className="min-h-[92px]"
+            />
+
+            {aiError ? <p className="text-xs text-destructive">{aiError}</p> : null}
+
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={handleGenerateWithAi}
+                disabled={submitting || aiGenerating || !aiPrompt.trim()}
+              >
+                <Sparkles className="size-4" />
+                {aiGenerating ? "Generating Template..." : "Generate Template AI"}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="template-name">Template Name</Label>

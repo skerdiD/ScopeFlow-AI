@@ -68,14 +68,31 @@ const projectsGroup: NavGroup = {
   ]
 };
 
+const templatesGroup: NavGroup = {
+  key: "templates",
+  label: "Templates",
+  icon: FileStack,
+  match: (pathname) => pathname === "/templates" || pathname.startsWith("/templates/"),
+  children: [
+    {
+      key: "all-templates",
+      label: "All Templates",
+      to: "/templates",
+      icon: FileStack,
+      match: (pathname) => pathname === "/templates"
+    },
+    {
+      key: "new-template",
+      label: "Add Template",
+      to: "/templates/new",
+      icon: PlusCircle,
+      match: (pathname) => pathname === "/templates/new",
+      emphasis: "subtle"
+    }
+  ]
+};
+
 const secondaryItems: NavItem[] = [
-  {
-    key: "templates",
-    label: "Templates",
-    to: "/templates",
-    icon: FileStack,
-    match: (pathname) => pathname.startsWith("/templates")
-  },
   {
     key: "activity",
     label: "Activity",
@@ -142,13 +159,21 @@ function SidebarItem({ item, active, collapsed, nested = false }: SidebarItemPro
 export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
   const { pathname } = useLocation();
   const projectsActive = projectsGroup.match(pathname);
+  const templatesActive = templatesGroup.match(pathname);
   const [projectsOpen, setProjectsOpen] = useState<boolean>(projectsActive);
+  const [templatesOpen, setTemplatesOpen] = useState<boolean>(templatesActive);
 
   useEffect(() => {
     if (projectsActive) {
       setProjectsOpen(true);
     }
   }, [projectsActive]);
+
+  useEffect(() => {
+    if (templatesActive) {
+      setTemplatesOpen(true);
+    }
+  }, [templatesActive]);
 
   useEffect(() => {
     if (collapsed) {
@@ -158,7 +183,16 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
     }
   }, [collapsed, projectsActive]);
 
-  const GroupIcon = projectsGroup.icon;
+  useEffect(() => {
+    if (collapsed) {
+      setTemplatesOpen(false);
+    } else if (templatesActive) {
+      setTemplatesOpen(true);
+    }
+  }, [collapsed, templatesActive]);
+
+  const ProjectGroupIcon = projectsGroup.icon;
+  const TemplateGroupIcon = templatesGroup.icon;
 
   return (
     <aside
@@ -215,61 +249,120 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
           <SidebarItem item={dashboardItem} active={dashboardItem.match(pathname)} collapsed={collapsed} />
 
           {collapsed ? (
-            <SidebarItem
-              item={{
-                key: projectsGroup.key,
-                label: projectsGroup.label,
-                to: "/projects",
-                icon: projectsGroup.icon,
-                match: projectsGroup.match
-              }}
-              active={projectsActive}
-              collapsed
-            />
+            <>
+              <SidebarItem
+                item={{
+                  key: projectsGroup.key,
+                  label: projectsGroup.label,
+                  to: "/projects",
+                  icon: projectsGroup.icon,
+                  match: projectsGroup.match
+                }}
+                active={projectsActive}
+                collapsed
+              />
+              <SidebarItem
+                item={{
+                  key: templatesGroup.key,
+                  label: templatesGroup.label,
+                  to: "/templates",
+                  icon: templatesGroup.icon,
+                  match: templatesGroup.match
+                }}
+                active={templatesActive}
+                collapsed
+              />
+            </>
           ) : (
-            <div className="space-y-1">
-              <button
-                type="button"
-                onClick={() => setProjectsOpen((open) => !open)}
-                className={cn(
-                  "flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-all duration-200",
-                  projectsActive
-                    ? "bg-primary/10 text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.16)]"
-                    : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
-                )}
-                aria-expanded={projectsOpen}
-              >
-                <GroupIcon className="size-4 shrink-0" />
-                <span className="flex-1 truncate">{projectsGroup.label}</span>
-                <ChevronDown
+            <>
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setProjectsOpen((open) => !open)}
                   className={cn(
-                    "size-4 shrink-0 transition-transform duration-200",
-                    projectsOpen ? "rotate-180" : "rotate-0"
+                    "flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-all duration-200",
+                    projectsActive
+                      ? "bg-primary/10 text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.16)]"
+                      : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
                   )}
-                />
-              </button>
+                  aria-expanded={projectsOpen}
+                >
+                  <ProjectGroupIcon className="size-4 shrink-0" />
+                  <span className="flex-1 truncate">{projectsGroup.label}</span>
+                  <ChevronDown
+                    className={cn(
+                      "size-4 shrink-0 transition-transform duration-200",
+                      projectsOpen ? "rotate-180" : "rotate-0"
+                    )}
+                  />
+                </button>
 
-              <div
-                className={cn(
-                  "grid transition-all duration-200",
-                  projectsOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-                )}
-              >
-                <div className="overflow-hidden">
-                  <div className="space-y-1 py-1">
-                    {projectsGroup.children.map((child) => (
-                      <SidebarItem
-                        key={child.key}
-                        item={child}
-                        active={child.match(pathname)}
-                        collapsed={false}
-                        nested
-                      />
-                    ))}
+                <div
+                  className={cn(
+                    "grid transition-all duration-200",
+                    projectsOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                  )}
+                >
+                  <div className="overflow-hidden">
+                    <div className="space-y-1 py-1">
+                      {projectsGroup.children.map((child) => (
+                        <SidebarItem
+                          key={child.key}
+                          item={child}
+                          active={child.match(pathname)}
+                          collapsed={false}
+                          nested
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+
+              <div className="space-y-1">
+                <button
+                  type="button"
+                  onClick={() => setTemplatesOpen((open) => !open)}
+                  className={cn(
+                    "flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-medium transition-all duration-200",
+                    templatesActive
+                      ? "bg-primary/10 text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.16)]"
+                      : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
+                  )}
+                  aria-expanded={templatesOpen}
+                >
+                  <TemplateGroupIcon className="size-4 shrink-0" />
+                  <span className="flex-1 truncate">{templatesGroup.label}</span>
+                  <ChevronDown
+                    className={cn(
+                      "size-4 shrink-0 transition-transform duration-200",
+                      templatesOpen ? "rotate-180" : "rotate-0"
+                    )}
+                  />
+                </button>
+
+                <div
+                  className={cn(
+                    "grid transition-all duration-200",
+                    templatesOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                  )}
+                >
+                  <div className="overflow-hidden">
+                    <div className="space-y-1 py-1">
+                      {templatesGroup.children.map((child) => (
+                        <SidebarItem
+                          key={child.key}
+                          item={child}
+                          active={child.match(pathname)}
+                          collapsed={false}
+                          nested
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
 
           {secondaryItems.map((item) => (
