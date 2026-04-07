@@ -1,9 +1,19 @@
 {
   "name": "scopeflow-ai",
+  "private": true,
   "version": "1.0.0",
-  "scripts": {},
+  "description": "ScopeFlow AI monorepo (client, server, and database tooling).",
+  "scripts": {
+    "install:client": "cd client && npm install --no-workspaces",
+    "install:database": "cd database && npm install --no-workspaces",
+    "setup": "npm run install:client && npm run install:database",
+    "dev": "npm run dev:client",
+    "dev:client": "cd client && npm run dev",
+    "dev:server": "cd server && .\\.venv\\Scripts\\python.exe manage.py runserver",
+    "build": "cd client && npm run build",
+    "test": "cd server && .\\.venv\\Scripts\\python.exe manage.py test proposals --keepdb"
+  },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "description": ""
+  "license": "MIT"
 }
