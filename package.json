@@ -11,7 +11,9 @@
     "dev:client": "cd client && npm run dev:web",
     "dev:web": "cd client && npm run dev:web",
     "dev:server": "cd server && python manage.py migrate && python manage.py runserver 127.0.0.1:8000",
-    "build": "cd client && npm run build",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "cd client && npm run build",
+    "build:server": "cd server && python manage.py check && python manage.py makemigrations --check --dry-run",
     "test": "cd server && python manage.py test proposals --keepdb"
   },
   "devDependencies": {
