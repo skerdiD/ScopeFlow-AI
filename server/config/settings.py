@@ -1,5 +1,8 @@
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -53,35 +56,46 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-db_name = os.getenv("DB_NAME", "").strip()
-db_user = os.getenv("DB_USER", "").strip()
-db_password = os.getenv("DB_PASSWORD", "").strip()
-db_host = os.getenv("DB_HOST", "").strip()
-db_port = os.getenv("DB_PORT", "").strip()
+def _build_postgres_database_config() -> dict:
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if not database_url:
+        raise ImproperlyConfigured("DATABASE_URL is required and must point to your Supabase PostgreSQL database.")
 
-has_postgres_config = all([db_name, db_user, db_password, db_host, db_port]) and not any(
-    value.startswith("your_db_") for value in [db_name, db_user, db_password, db_host]
-)
+    parsed = urlparse(database_url)
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        raise ImproperlyConfigured("DATABASE_URL must use postgres:// or postgresql:// scheme.")
 
-if has_postgres_config:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": db_name,
-            "USER": db_user,
-            "PASSWORD": db_password,
-            "HOST": db_host,
-            "PORT": db_port,
-            "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
-        }
+    db_name = parsed.path.lstrip("/").strip()
+    db_host = (parsed.hostname or "").strip()
+    db_user = unquote(parsed.username or "").strip()
+    db_password = unquote(parsed.password or "").strip()
+
+    if not all([db_name, db_host, db_user, db_password]):
+        raise ImproperlyConfigured("DATABASE_URL is missing required PostgreSQL connection parts.")
+
+    conn_max_age = int(os.getenv("DATABASE_CONN_MAX_AGE", "60"))
+    query_params = {key: values[-1] for key, values in parse_qs(parsed.query).items() if values}
+    database_ssl_mode = os.getenv("DATABASE_SSL_MODE", "").strip()
+
+    if database_ssl_mode:
+        query_params["sslmode"] = database_ssl_mode
+    elif "sslmode" not in query_params:
+        # Supabase Postgres requires SSL in normal environments.
+        query_params["sslmode"] = "require"
+
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": db_name,
+        "USER": db_user,
+        "PASSWORD": db_password,
+        "HOST": db_host,
+        "PORT": str(parsed.port or 5432),
+        "CONN_MAX_AGE": conn_max_age,
+        "OPTIONS": query_params,
     }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+
+
+DATABASES = {"default": _build_postgres_database_config()}
 
 AUTH_PASSWORD_VALIDATORS = []
 

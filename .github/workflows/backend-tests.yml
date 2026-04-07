@@ -14,6 +14,20 @@ on:
 jobs:
   test-backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: scopeflow_ci
+          POSTGRES_USER: scopeflow
+          POSTGRES_PASSWORD: scopeflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scopeflow -d scopeflow_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     defaults:
       run:
@@ -37,10 +51,12 @@ jobs:
             "djangorestframework>=3.15,<3.16" \
             "django-cors-headers>=4.4,<4.5" \
             "requests>=2.31,<3.0" \
+            "psycopg[binary]>=3.2,<3.4" \
             "python-dotenv>=1.0,<2.0"
 
       - name: Run proposal backend tests
         env:
           SECRET_KEY: ci-secret-key
           DEBUG: "False"
+          DATABASE_URL: postgresql://scopeflow:scopeflow@127.0.0.1:5432/scopeflow_ci?sslmode=disable
         run: python manage.py test proposals --verbosity 2
