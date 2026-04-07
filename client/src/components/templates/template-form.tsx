@@ -20,6 +20,7 @@ type TemplateFormProps = {
   initialTemplate?: ProposalTemplate | null;
   categories: string[];
   submitting?: boolean;
+  submitLabel?: string;
   onCancel: () => void;
   onSubmit: (draft: TemplateDraftInput) => Promise<void> | void;
   enableAiGenerator?: boolean;
@@ -88,17 +89,28 @@ function normalizeCategoryOptions(categories: string[]) {
   );
 }
 
+function buildDraftFromValues(values: TemplateFormValues): TemplateDraftInput {
+  return {
+    name: values.name.trim(),
+    description: values.description.trim(),
+    category: values.category.trim(),
+    sections: createDefaultTemplateSections(values.sections)
+  };
+}
+
 export function TemplateForm({
   mode,
   initialTemplate,
   categories,
   submitting = false,
+  submitLabel,
   onCancel,
   onSubmit,
   enableAiGenerator = false,
   onGenerateWithAi,
   className
 }: TemplateFormProps) {
+  const aiEnabled = enableAiGenerator && Boolean(onGenerateWithAi);
   const categoryOptions = useMemo(() => normalizeCategoryOptions(categories), [categories]);
   const [values, setValues] = useState<TemplateFormValues>(() => createInitialValues(initialTemplate));
   const [expandedSections, setExpandedSections] = useState<Record<TemplateSectionKey, boolean>>(
@@ -184,16 +196,12 @@ export function TemplateForm({
       return;
     }
 
-    await onSubmit({
-      name: values.name.trim(),
-      description: values.description.trim(),
-      category: values.category.trim(),
-      sections: createDefaultTemplateSections(values.sections)
-    });
+    await onSubmit(buildDraftFromValues(values));
   }
 
-  async function handleGenerateWithAi() {
-    if (!enableAiGenerator || !onGenerateWithAi) {
+  async function handleGenerateAndSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!aiEnabled || !onGenerateWithAi) {
       return;
     }
 
@@ -209,16 +217,22 @@ export function TemplateForm({
       const generated = await onGenerateWithAi(prompt);
       const normalizedSections = createDefaultTemplateSections(generated.sections);
       const generatedCategory = generated.category.trim();
-
-      setValues((current) => ({
-        ...current,
-        name: generated.name.trim() || current.name,
-        description: generated.description.trim() || current.description,
-        category: generatedCategory || current.category,
+      const nextValues: TemplateFormValues = {
+        name: generated.name.trim() || values.name,
+        description: generated.description.trim() || values.description,
+        category: generatedCategory || values.category,
         sections: normalizedSections
-      }));
+      };
+
+      if (!nextValues.category.trim()) {
+        setAiError("AI could not determine a template category. Please refine your prompt.");
+        return;
+      }
+
+      setValues(nextValues);
       setExpandedSections(createExpandedSectionsFromValues(normalizedSections));
       setUseCustomCategory(!generatedCategory || !categoryOptions.includes(generatedCategory));
+      await onSubmit(buildDraftFromValues(nextValues));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to generate template.";
       setAiError(message);
@@ -228,14 +242,18 @@ export function TemplateForm({
   }
 
   return (
-    <form className={cn("flex min-h-0 flex-1 flex-col", className)} onSubmit={handleSubmit}>
+    <form className={cn("flex min-h-0 flex-1 flex-col", className)} onSubmit={aiEnabled ? handleGenerateAndSubmit : handleSubmit}>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4 sm:px-6">
-        {mode === "create" && enableAiGenerator && onGenerateWithAi ? (
+        {aiEnabled ? (
           <div className="space-y-3 rounded-xl border bg-muted/35 p-4">
             <div className="space-y-1">
-              <h3 className="text-sm font-semibold">Generate Template AI</h3>
+              <h3 className="text-sm font-semibold">
+                {mode === "edit" ? "Regenerate Template with AI" : "Generate Template with AI"}
+              </h3>
               <p className="text-xs text-muted-foreground">
-                Write a short prompt and AI will draft a full template like your sample library.
+                {mode === "edit"
+                  ? "Write a short brief. The bottom button will generate and update this template."
+                  : "Write a short brief. The bottom button will generate and create this template."}
               </p>
             </div>
 
@@ -247,17 +265,6 @@ export function TemplateForm({
             />
 
             {aiError ? <p className="text-xs text-destructive">{aiError}</p> : null}
-
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={handleGenerateWithAi}
-                disabled={submitting || aiGenerating || !aiPrompt.trim()}
-              >
-                <Sparkles className="size-4" />
-                {aiGenerating ? "Generating Template..." : "Generate Template AI"}
-              </Button>
-            </div>
           </div>
         ) : null}
 
@@ -266,7 +273,7 @@ export function TemplateForm({
             <Label htmlFor="template-name">Template Name</Label>
             <Input
               id="template-name"
-              required
+              required={!aiEnabled}
               value={values.name}
               onChange={(event) =>
                 setValues((current) => ({
@@ -282,7 +289,7 @@ export function TemplateForm({
             <Label htmlFor="template-description">Description</Label>
             <Textarea
               id="template-description"
-              required
+              required={!aiEnabled}
               value={values.description}
               onChange={(event) =>
                 setValues((current) => ({
@@ -324,7 +331,7 @@ export function TemplateForm({
             </select>
             {useCustomCategory ? (
               <Input
-                required
+                required={!aiEnabled}
                 value={values.category}
                 onChange={(event) =>
                   setValues((current) => ({
@@ -420,9 +427,22 @@ export function TemplateForm({
           <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
             Cancel
           </Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting ? "Saving..." : mode === "create" ? "Create Template" : "Save Changes"}
-          </Button>
+          {aiEnabled ? (
+            <Button type="submit" formNoValidate disabled={submitting || aiGenerating || !aiPrompt.trim()}>
+              <Sparkles className="size-4" />
+              {submitting || aiGenerating
+                ? mode === "edit"
+                  ? "Generating & Updating..."
+                  : "Generating Template..."
+                : mode === "edit"
+                  ? "Generate & Update Template"
+                  : "Generate Template"}
+            </Button>
+          ) : (
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Saving..." : submitLabel ?? (mode === "create" ? "Create Template" : "Save Changes")}
+            </Button>
+          )}
         </div>
       </div>
     </form>

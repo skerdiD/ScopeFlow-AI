@@ -3,38 +3,25 @@ import { FileStack, Filter, FolderOpenDot, PlusCircle, Search, Trash2 } from "lu
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { TemplateCard } from "@/components/templates/template-card";
-import { TemplateForm } from "@/components/templates/template-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTemplates } from "@/hooks/use-templates";
 import { logActivity } from "@/lib/activity";
 import {
-  type ProposalTemplate,
-  type TemplateDraftInput
+  type ProposalTemplate
 } from "@/lib/templates";
-
-type TemplateDialogMode = "edit" | null;
 
 export function TemplatesPage() {
   const navigate = useNavigate();
-  const { templates, loading, updateTemplate, duplicateTemplate, removeTemplate } = useTemplates();
+  const { templates, loading, duplicateTemplate, removeTemplate } = useTemplates();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [dialogMode, setDialogMode] = useState<TemplateDialogMode>(null);
-  const [activeTemplate, setActiveTemplate] = useState<ProposalTemplate | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProposalTemplate | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [duplicateBusyId, setDuplicateBusyId] = useState<string | null>(null);
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
 
@@ -62,30 +49,7 @@ export function TemplatesPage() {
   }
 
   function openEditDialog(template: ProposalTemplate) {
-    setDialogMode("edit");
-    setActiveTemplate(template);
-  }
-
-  function closeTemplateDialog() {
-    setDialogMode(null);
-    setActiveTemplate(null);
-  }
-
-  async function handleSaveTemplate(draft: TemplateDraftInput) {
-    try {
-      setSubmitting(true);
-
-      if (dialogMode === "edit" && activeTemplate) {
-        updateTemplate(activeTemplate.id, draft);
-        toast.success("Template updated.");
-      }
-
-      closeTemplateDialog();
-    } catch {
-      toast.error("Failed to save template.");
-    } finally {
-      setSubmitting(false);
-    }
+    navigate(`/templates/${encodeURIComponent(template.id)}/edit`);
   }
 
   async function handleDuplicateTemplate(template: ProposalTemplate) {
@@ -274,25 +238,6 @@ export function TemplatesPage() {
           </div>
         </div>
       ) : null}
-
-      <Dialog open={dialogMode !== null} onOpenChange={(open) => (!open ? closeTemplateDialog() : null)}>
-        <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-h-[88vh] sm:max-w-3xl">
-          <DialogHeader className="shrink-0 border-b px-5 py-4 sm:px-6">
-            <DialogTitle>Edit Template</DialogTitle>
-            <DialogDescription>Refine this template and keep your proposal structure consistent.</DialogDescription>
-          </DialogHeader>
-
-          <TemplateForm
-            mode="edit"
-            initialTemplate={activeTemplate}
-            categories={categoryOptions.filter((category) => category !== "all")}
-            submitting={submitting}
-            onCancel={closeTemplateDialog}
-            onSubmit={handleSaveTemplate}
-            className="min-h-0"
-          />
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => (!open ? setDeleteTarget(null) : null)}>
         <DialogContent>

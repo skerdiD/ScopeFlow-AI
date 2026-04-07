@@ -79,7 +79,7 @@ const templatesGroup: NavGroup = {
       label: "All Templates",
       to: "/templates",
       icon: FileStack,
-      match: (pathname) => pathname === "/templates"
+      match: (pathname) => pathname === "/templates" || (pathname.startsWith("/templates/") && pathname.endsWith("/edit"))
     },
     {
       key: "new-template",

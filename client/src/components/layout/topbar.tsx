@@ -47,6 +47,13 @@ function getPageContext(pathname: string): PageContext {
       };
     }
 
+    if (pathname.startsWith("/templates/") && pathname.endsWith("/edit")) {
+      return {
+        title: "Edit Template",
+        subtitle: "Update template content and default section structure for consistent proposals."
+      };
+    }
+
     return {
       title: "Templates",
       subtitle: "Maintain reusable proposal structures for consistent delivery."

@@ -1,6 +1,3 @@
-from django.test import TestCase
-
-# Create your tests here.
 from unittest.mock import Mock, patch
 
 from django.test import TestCase
@@ -8,13 +5,23 @@ from django.test import TestCase
 from .services.gemini_service import (
     GeminiApiKeyLeakedError,
     GeminiApiKeyMissingError,
+    GeminiApiResponseError,
     GeminiQuotaExceededError,
+    _clean_json_text,
+    generate_template_draft,
     generate_structured_proposal,
     normalize_generated_proposal,
 )
 
 
 class GeminiServiceTests(TestCase):
+    def test_clean_json_text_extracts_object_from_wrapped_response(self):
+        raw = '```json\n{"name":"SEO Template","category":"SEO"}\n```\nAdditional notes here.'
+        parsed = _clean_json_text(raw)
+
+        self.assertEqual(parsed["name"], "SEO Template")
+        self.assertEqual(parsed["category"], "SEO")
+
     def test_normalize_generated_proposal_success(self):
         normalized = normalize_generated_proposal(
             {
@@ -161,3 +168,48 @@ class GeminiServiceTests(TestCase):
                     "call_notes": "Priority on conversion optimization",
                 }
             )
+
+    @patch("proposals.services.gemini_service._call_gemini_json_response")
+    def test_generate_structured_proposal_fallback_on_invalid_json(self, mock_call: Mock):
+        mock_call.side_effect = GeminiApiResponseError("Gemini returned invalid JSON.")
+
+        generated = generate_structured_proposal(
+            {
+                "client_name": "Acme",
+                "business_type": "SaaS",
+                "project_goals": "Improve onboarding conversion and reduce churn",
+                "required_features": "Onboarding flow, activation emails, analytics dashboard",
+                "budget_range": "$10,000 - $25,000",
+                "timeline": "2-3 months",
+                "call_notes": "Focus on first-week activation",
+            }
+        )
+
+        self.assertTrue(generated["summary"])
+        self.assertGreaterEqual(len(generated["scope_of_work"]), 4)
+        self.assertGreaterEqual(len(generated["deliverables"]), 5)
+        self.assertGreaterEqual(len(generated["milestones"]), 3)
+        self.assertGreaterEqual(len(generated["risks"]), 2)
+
+    @patch("proposals.services.gemini_service._call_gemini_json_response")
+    def test_generate_template_draft_fallback_on_invalid_json(self, mock_call: Mock):
+        mock_call.side_effect = GeminiApiResponseError("Gemini returned invalid JSON.")
+
+        draft = generate_template_draft("SEO", existing_categories=["SEO", "Marketing"])
+
+        self.assertTrue(draft["name"])
+        self.assertTrue(draft["description"])
+        self.assertIn(draft["category"], ["SEO", "Marketing", "Web Design"])
+        self.assertTrue(draft["sections"]["summary"]["included"])
+        self.assertTrue(draft["sections"]["summary"]["content"])
+
+    @patch("proposals.services.gemini_service._call_gemini_json_response")
+    def test_generate_template_draft_fallback_on_missing_key(self, mock_call: Mock):
+        mock_call.side_effect = GeminiApiKeyMissingError("GEMINI_API_KEY is missing.")
+
+        draft = generate_template_draft("SaaS onboarding", existing_categories=["SaaS", "Web Design"])
+
+        self.assertTrue(draft["name"])
+        self.assertTrue(draft["description"])
+        self.assertTrue(draft["category"])
+        self.assertTrue(draft["sections"]["scope"]["content"])

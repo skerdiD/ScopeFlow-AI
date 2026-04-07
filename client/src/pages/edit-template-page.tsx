@@ -1,20 +1,25 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, Sparkles } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { ArrowLeft, PencilLine } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { TemplateForm } from "@/components/templates/template-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useTemplates } from "@/hooks/use-templates";
-import { logActivity } from "@/lib/activity";
 import { generateTemplateDraft } from "@/lib/api";
 import type { TemplateDraftInput } from "@/lib/templates";
 
-export function NewTemplatePage() {
+export function EditTemplatePage() {
   const navigate = useNavigate();
-  const { templates, createTemplate } = useTemplates();
+  const { templateId = "" } = useParams();
+  const { templates, loading, updateTemplate } = useTemplates();
   const [submitting, setSubmitting] = useState(false);
+
+  const selectedTemplate = useMemo(
+    () => templates.find((template) => template.id === templateId) ?? null,
+    [templateId, templates]
+  );
 
   const categoryOptions = useMemo(() => {
     const categorySet = new Set<string>(templates.map((template) => template.category.trim()).filter(Boolean));
@@ -22,25 +27,22 @@ export function NewTemplatePage() {
   }, [templates]);
 
   async function handleSaveTemplate(draft: TemplateDraftInput) {
+    if (!selectedTemplate) {
+      toast.error("Template not found.");
+      return;
+    }
+
     try {
       setSubmitting(true);
-      const createdTemplate = createTemplate(draft);
-
-      logActivity({
-        type: "template_created",
-        title: "Template created",
-        description: `${createdTemplate.name} added to the template library.`,
-        actor: "user",
-        projectName: createdTemplate.name,
-        metadata: {
-          category: createdTemplate.category
-        }
-      });
-
-      toast.success("Template created.");
+      const updatedTemplate = updateTemplate(selectedTemplate.id, draft);
+      if (!updatedTemplate) {
+        toast.error("Template not found.");
+        return;
+      }
+      toast.success("Template updated.");
       navigate("/templates");
     } catch {
-      toast.error("Failed to create template.");
+      toast.error("Failed to update template.");
     } finally {
       setSubmitting(false);
     }
@@ -53,18 +55,49 @@ export function NewTemplatePage() {
     });
   }
 
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <section className="rounded-[1.75rem] border bg-card px-6 py-5 shadow-sm">
+          <p className="text-sm text-muted-foreground">Loading template...</p>
+        </section>
+      </div>
+    );
+  }
+
+  if (!selectedTemplate) {
+    return (
+      <div className="space-y-6">
+        <section className="rounded-[1.75rem] border bg-card px-6 py-5 shadow-sm">
+          <div className="space-y-2">
+            <h1 className="text-3xl font-semibold tracking-tight">Template Not Found</h1>
+            <p className="text-sm text-muted-foreground">
+              The template you are trying to edit is missing or was deleted.
+            </p>
+            <div className="pt-2">
+              <Button variant="outline" onClick={() => navigate("/templates")}>
+                <ArrowLeft className="size-4" />
+                Back to Templates
+              </Button>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-[1.75rem] border bg-card px-6 py-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
-              <Sparkles className="size-3.5 text-primary" />
-              New Template
+              <PencilLine className="size-3.5 text-primary" />
+              Edit Template
             </div>
-            <h1 className="text-3xl font-semibold tracking-tight">Add Template</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">Edit Template</h1>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Build a reusable proposal template manually or generate a first draft with AI from a short prompt.
+              Update this template manually or regenerate improved section text with AI.
             </p>
           </div>
 
@@ -77,12 +110,13 @@ export function NewTemplatePage() {
 
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">Template form</p>
-        <Badge variant="outline">{categoryOptions.length} saved categories</Badge>
+        <Badge variant="outline">Last updated {new Date(selectedTemplate.updatedAt).toLocaleDateString()}</Badge>
       </div>
 
       <Card className="overflow-hidden border-border/70 shadow-sm">
         <TemplateForm
-          mode="create"
+          mode="edit"
+          initialTemplate={selectedTemplate}
           categories={categoryOptions}
           submitting={submitting}
           onCancel={() => navigate("/templates")}

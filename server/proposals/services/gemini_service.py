@@ -113,25 +113,120 @@ Grounding hints:
 
 def _clean_json_text(raw_text: str) -> dict[str, Any]:
     text = raw_text.strip()
+    if not text:
+        raise GeminiApiResponseError("Gemini returned invalid JSON.")
+    smart_quote_translation = str.maketrans(
+        {
+            "\u201c": '"',
+            "\u201d": '"',
+            "\u2018": "'",
+            "\u2019": "'",
+        }
+    )
+
+    def extract_first_json_object(value: str) -> str:
+        start = value.find("{")
+        if start == -1:
+            return ""
+
+        depth = 0
+        in_string = False
+        escaped = False
+
+        for index in range(start, len(value)):
+            char = value[index]
+
+            if in_string:
+                if escaped:
+                    escaped = False
+                    continue
+                if char == "\\":
+                    escaped = True
+                    continue
+                if char == '"':
+                    in_string = False
+                continue
+
+            if char == '"':
+                in_string = True
+                continue
+            if char == "{":
+                depth += 1
+                continue
+            if char == "}":
+                depth -= 1
+                if depth == 0:
+                    return value[start : index + 1]
+
+        return ""
+
+    def parse_as_object(candidate: str) -> dict[str, Any] | None:
+        normalized_candidate = candidate.strip()
+        if not normalized_candidate:
+            return None
+
+        parsed = json.loads(normalized_candidate)
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, dict):
+                    return item
+        return None
+
+    candidates: list[str] = [text]
 
     if text.startswith("```"):
         lines = text.splitlines()
         if len(lines) >= 3:
-            text = "\n".join(lines[1:-1]).strip()
+            stripped_code_fence = "\n".join(lines[1:-1]).strip()
+            if stripped_code_fence:
+                candidates.append(stripped_code_fence)
 
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, dict):
-            return parsed
-        raise GeminiApiResponseError("Gemini did not return a JSON object.")
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            parsed = json.loads(text[start : end + 1])
-            if isinstance(parsed, dict):
-                return parsed
-        raise GeminiApiResponseError("Gemini returned invalid JSON.")
+    first_object = extract_first_json_object(text)
+    if first_object:
+        candidates.append(first_object)
+
+    seen_candidates: set[str] = set()
+    unique_candidates: list[str] = []
+    for candidate in candidates:
+        normalized_candidate = candidate.strip()
+        if not normalized_candidate or normalized_candidate in seen_candidates:
+            continue
+        seen_candidates.add(normalized_candidate)
+        unique_candidates.append(normalized_candidate)
+
+    for candidate in unique_candidates:
+        parse_attempts = [
+            candidate,
+            candidate
+            .replace("\ufeff", "")
+            .translate(smart_quote_translation)
+            .strip(),
+        ]
+
+        seen_attempts: set[str] = set()
+        for attempt in parse_attempts:
+            if not attempt or attempt in seen_attempts:
+                continue
+            seen_attempts.add(attempt)
+
+            try:
+                parsed = parse_as_object(attempt)
+                if parsed is not None:
+                    return parsed
+            except json.JSONDecodeError:
+                extracted = extract_first_json_object(attempt)
+                if not extracted or extracted == attempt:
+                    continue
+                try:
+                    parsed = parse_as_object(extracted)
+                    if parsed is not None:
+                        return parsed
+                except json.JSONDecodeError:
+                    continue
+
+    raise GeminiApiResponseError("Gemini returned invalid JSON.")
 
 
 def _call_gemini_json_response(
@@ -335,6 +430,107 @@ def _fallback_risks(intake: dict[str, str]) -> list[str]:
         defaults[2] = "If core requirements stay broad, scope decisions may take longer and impact delivery."
 
     return defaults
+
+
+def _extract_feature_items(required_features: str) -> list[str]:
+    raw = required_features.replace(";", "\n").replace(",", "\n")
+    items = _extract_lines(raw)
+    if not items:
+        return []
+
+    normalized_items: list[str] = []
+    seen = set()
+    for item in items:
+        compact = _normalize_space(item)
+        lowered = compact.lower()
+        if not compact or lowered in seen or _is_low_signal_text(compact):
+            continue
+        seen.add(lowered)
+        normalized_items.append(_truncate_words(compact, 10))
+    return normalized_items
+
+
+def _fallback_generated_proposal(intake: dict[str, str]) -> dict[str, Any]:
+    business_type = _normalize_space(intake.get("business_type", "")).strip()
+    project_goals = _normalize_space(intake.get("project_goals", "")).strip()
+    required_features = _normalize_space(intake.get("required_features", "")).strip()
+    timeline = _normalize_space(intake.get("timeline", "")).strip() or "6-10 weeks"
+    client_name = _normalize_space(intake.get("client_name", "")).strip() or "the client"
+
+    archetype = _detect_template_archetype(
+        f"{business_type} {project_goals} {required_features}",
+        category_hint=business_type,
+    )
+    blueprint = _get_template_blueprint(archetype)
+
+    feature_items = _extract_feature_items(required_features)
+    if len(feature_items) < 2:
+        feature_items = [str(item) for item in blueprint.get("scope", [])[:3]]
+
+    focus_text = ", ".join(feature_items[:3]).strip()
+    if not focus_text:
+        focus_text = "core delivery priorities"
+
+    summary = _truncate_words(
+        f"We will deliver a {business_type or str(blueprint['category']).lower()} project for {client_name} "
+        f"focused on {project_goals or 'clear business outcomes'}, with execution centered on {focus_text}. "
+        f"Delivery will be phased over approximately {timeline} with regular review checkpoints.",
+        75,
+    )
+
+    scope_candidates = [
+        "Discovery and technical planning aligned to project goals",
+        *[f"Implement {item}" for item in feature_items[:4]],
+        "Quality assurance, revisions, and launch readiness",
+    ]
+    scope_of_work = _merge_with_fallback_items(
+        scope_candidates,
+        list(blueprint.get("scope", [])),
+        min_items=4,
+        max_items=8,
+        max_words=18,
+    )
+
+    deliverable_candidates = [
+        "Project execution plan with agreed scope boundaries",
+        *[f"Completed implementation of {item}" for item in feature_items[:4]],
+        "QA report and launch handover package",
+    ]
+    deliverables = _merge_with_fallback_items(
+        deliverable_candidates,
+        list(blueprint.get("deliverables", [])),
+        min_items=5,
+        max_items=8,
+        max_words=16,
+    )
+
+    milestone_lines = [
+        "Discovery: Confirm scope, priorities, and delivery sequence.",
+        "Execution: Build and review core features in iterative checkpoints.",
+        "Validation: QA, bug fixes, and final acceptance preparation.",
+        "Launch: Production release and handover documentation.",
+    ]
+    milestone_defaults = list(blueprint.get("milestones", []))
+    merged_milestones = _merge_with_fallback_items(
+        milestone_lines,
+        milestone_defaults,
+        min_items=3,
+        max_items=5,
+        max_words=22,
+    )
+    milestones = _normalize_milestones(merged_milestones)
+    milestones = _validate_item_count(milestones, min_items=3, max_items=5, field_name="milestones")
+
+    risks = _normalize_string_list(_fallback_risks(intake), max_words=18)
+    risks = _validate_item_count(risks, min_items=2, max_items=4, field_name="risks")
+
+    return {
+        "summary": summary,
+        "scope_of_work": scope_of_work,
+        "deliverables": deliverables,
+        "milestones": milestones,
+        "risks": risks,
+    }
 
 
 LOW_SIGNAL_PHRASES = {
@@ -1079,8 +1275,11 @@ def normalize_generated_proposal(data: dict[str, Any], intake: dict[str, str] | 
 
 def generate_structured_proposal(intake: dict[str, str]) -> dict[str, Any]:
     prompt = _build_prompt(intake)
-    parsed = _call_gemini_json_response(prompt, temperature=0.2, max_output_tokens=900)
-    return normalize_generated_proposal(parsed, intake=intake)
+    try:
+        parsed = _call_gemini_json_response(prompt, temperature=0.2, max_output_tokens=900)
+        return normalize_generated_proposal(parsed, intake=intake)
+    except GeminiApiResponseError:
+        return _fallback_generated_proposal(intake)
 
 
 def generate_template_draft(user_prompt: str, existing_categories: list[str] | None = None) -> dict[str, Any]:
@@ -1096,7 +1295,10 @@ def generate_template_draft(user_prompt: str, existing_categories: list[str] | N
 
     expanded_prompt = _expand_sparse_template_prompt(normalized_prompt)
     prompt = _build_template_prompt(expanded_prompt, categories)
-    parsed = _call_gemini_json_response(prompt, temperature=0.4, max_output_tokens=1200)
+    try:
+        parsed = _call_gemini_json_response(prompt, temperature=0.4, max_output_tokens=1200)
+    except GeminiServiceError:
+        parsed = {}
     return normalize_generated_template_draft(
         parsed,
         user_prompt=normalized_prompt,
