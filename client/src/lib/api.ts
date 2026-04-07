@@ -1,10 +1,25 @@
 import type { TemplateDraftInput } from "@/lib/templates";
 import { supabase } from "@/lib/supabase";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ??
-  import.meta.env.VITE_API_URL ??
-  "http://127.0.0.1:8000/api";
+const LOCAL_API_BASE_URL = "http://127.0.0.1:8000/api";
+const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? import.meta.env.VITE_API_URL ?? "").trim();
+const API_BASE_URL = (configuredApiBaseUrl || (import.meta.env.DEV ? LOCAL_API_BASE_URL : "")).replace(/\/+$/, "");
+
+function getApiBaseUrl(): string {
+  if (!API_BASE_URL) {
+    throw new Error(
+      "API is not configured. Set VITE_API_BASE_URL to your backend URL (example: https://scopeflow-ai.onrender.com/api)."
+    );
+  }
+
+  if (!import.meta.env.DEV && /https?:\/\/(localhost|127\.0\.0\.1)/i.test(API_BASE_URL)) {
+    throw new Error(
+      "VITE_API_BASE_URL points to localhost in production. Set it to your deployed backend URL."
+    );
+  }
+
+  return API_BASE_URL;
+}
 
 export type GeneratedMilestone = {
   title: string;
@@ -115,17 +130,27 @@ async function createAuthHeaders(contentType = false): Promise<Record<string, st
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const expectsJson = contentType.includes("application/json");
+
   if (!response.ok) {
     let message = "Request failed.";
 
-    try {
+    if (expectsJson) {
       const data = await response.json();
       message = data.detail || JSON.stringify(data);
-    } catch {
+    } else {
       message = response.statusText || message;
     }
 
     throw new Error(message);
+  }
+
+  if (!expectsJson) {
+    const bodySnippet = (await response.text()).slice(0, 160);
+    throw new Error(
+      `API returned non-JSON content. Check VITE_API_BASE_URL. Response starts with: ${bodySnippet}`
+    );
   }
 
   return response.json() as Promise<T>;
@@ -134,20 +159,20 @@ async function handleResponse<T>(response: Response): Promise<T> {
 export async function getProjects(userId: string): Promise<ProposalProject[]> {
   void userId;
   const headers = await createAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/projects/`, { headers });
+  const response = await fetch(`${getApiBaseUrl()}/projects/`, { headers });
   return handleResponse<ProposalProject[]>(response);
 }
 
 export async function getProject(id: string, userId: string): Promise<ProposalProject> {
   void userId;
   const headers = await createAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/projects/${id}/`, { headers });
+  const response = await fetch(`${getApiBaseUrl()}/projects/${id}/`, { headers });
   return handleResponse<ProposalProject>(response);
 }
 
 export async function createProject(payload: ProposalProjectPayload): Promise<ProposalProject> {
   const headers = await createAuthHeaders(true);
-  const response = await fetch(`${API_BASE_URL}/projects/`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/`, {
     method: "POST",
     headers,
     body: JSON.stringify(payload)
@@ -158,7 +183,7 @@ export async function createProject(payload: ProposalProjectPayload): Promise<Pr
 
 export async function generateProposal(payload: GenerateProposalPayload): Promise<ProposalProject> {
   const headers = await createAuthHeaders(true);
-  const response = await fetch(`${API_BASE_URL}/generate/`, {
+  const response = await fetch(`${getApiBaseUrl()}/generate/`, {
     method: "POST",
     headers,
     body: JSON.stringify(payload)
@@ -169,7 +194,7 @@ export async function generateProposal(payload: GenerateProposalPayload): Promis
 
 export async function generateTemplateDraft(payload: GenerateTemplatePayload): Promise<TemplateDraftInput> {
   const headers = await createAuthHeaders(true);
-  const response = await fetch(`${API_BASE_URL}/generate-template/`, {
+  const response = await fetch(`${getApiBaseUrl()}/generate-template/`, {
     method: "POST",
     headers,
     body: JSON.stringify(payload)
@@ -180,7 +205,7 @@ export async function generateTemplateDraft(payload: GenerateTemplatePayload): P
 
 export async function updateProject(id: string, payload: ProposalProjectPayload): Promise<ProposalProject> {
   const headers = await createAuthHeaders(true);
-  const response = await fetch(`${API_BASE_URL}/projects/${id}/`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${id}/`, {
     method: "PUT",
     headers,
     body: JSON.stringify(payload)
@@ -191,7 +216,7 @@ export async function updateProject(id: string, payload: ProposalProjectPayload)
 
 export async function deleteProject(id: string): Promise<void> {
   const headers = await createAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/projects/${id}/`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${id}/`, {
     method: "DELETE",
     headers,
   });
@@ -206,7 +231,7 @@ export async function restoreProjectVersion(
   payload: { version_id: number }
 ): Promise<ProposalProject> {
   const headers = await createAuthHeaders(true);
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/restore-version/`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/restore-version/`, {
     method: "POST",
     headers,
     body: JSON.stringify(payload)
@@ -259,7 +284,7 @@ export async function exportProjectDocument(
     params.set("final_version", "true");
   }
 
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/export/?${params.toString()}`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/export/?${params.toString()}`, {
     method: "GET",
     headers,
   });
@@ -287,7 +312,7 @@ export async function markProjectFinal(
   payload: ProposalProjectPayload
 ): Promise<ProposalProject> {
   const headers = await createAuthHeaders(true);
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/mark-final/`, {
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/mark-final/`, {
     method: "POST",
     headers,
     body: JSON.stringify(payload)
