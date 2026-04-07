@@ -1,4 +1,5 @@
 import type { TemplateDraftInput } from "@/lib/templates";
+import { supabase } from "@/lib/supabase";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
@@ -96,6 +97,21 @@ export type GenerateTemplatePayload = {
   existing_categories?: string[];
 };
 
+async function createAuthHeaders(contentType = false): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {};
+  if (contentType) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const { data } = await supabase.auth.getSession();
+  const accessToken = data.session?.access_token;
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+
+  return headers;
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let message = "Request failed.";
@@ -114,21 +130,24 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 export async function getProjects(userId: string): Promise<ProposalProject[]> {
-  const response = await fetch(`${API_BASE_URL}/projects/?user_id=${encodeURIComponent(userId)}`);
+  void userId;
+  const headers = await createAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/projects/`, { headers });
   return handleResponse<ProposalProject[]>(response);
 }
 
 export async function getProject(id: string, userId: string): Promise<ProposalProject> {
-  const response = await fetch(`${API_BASE_URL}/projects/${id}/?user_id=${encodeURIComponent(userId)}`);
+  void userId;
+  const headers = await createAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/projects/${id}/`, { headers });
   return handleResponse<ProposalProject>(response);
 }
 
 export async function createProject(payload: ProposalProjectPayload): Promise<ProposalProject> {
+  const headers = await createAuthHeaders(true);
   const response = await fetch(`${API_BASE_URL}/projects/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers,
     body: JSON.stringify(payload)
   });
 
@@ -136,11 +155,10 @@ export async function createProject(payload: ProposalProjectPayload): Promise<Pr
 }
 
 export async function generateProposal(payload: GenerateProposalPayload): Promise<ProposalProject> {
+  const headers = await createAuthHeaders(true);
   const response = await fetch(`${API_BASE_URL}/generate/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers,
     body: JSON.stringify(payload)
   });
 
@@ -148,11 +166,10 @@ export async function generateProposal(payload: GenerateProposalPayload): Promis
 }
 
 export async function generateTemplateDraft(payload: GenerateTemplatePayload): Promise<TemplateDraftInput> {
+  const headers = await createAuthHeaders(true);
   const response = await fetch(`${API_BASE_URL}/generate-template/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers,
     body: JSON.stringify(payload)
   });
 
@@ -160,11 +177,10 @@ export async function generateTemplateDraft(payload: GenerateTemplatePayload): P
 }
 
 export async function updateProject(id: string, payload: ProposalProjectPayload): Promise<ProposalProject> {
+  const headers = await createAuthHeaders(true);
   const response = await fetch(`${API_BASE_URL}/projects/${id}/`, {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers,
     body: JSON.stringify(payload)
   });
 
@@ -172,8 +188,10 @@ export async function updateProject(id: string, payload: ProposalProjectPayload)
 }
 
 export async function deleteProject(id: string): Promise<void> {
+  const headers = await createAuthHeaders();
   const response = await fetch(`${API_BASE_URL}/projects/${id}/`, {
-    method: "DELETE"
+    method: "DELETE",
+    headers,
   });
 
   if (!response.ok) {
@@ -185,11 +203,10 @@ export async function restoreProjectVersion(
   projectId: string,
   payload: { user_id: string; version_id: number }
 ): Promise<ProposalProject> {
+  const headers = await createAuthHeaders(true);
   const response = await fetch(`${API_BASE_URL}/projects/${projectId}/restore-version/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers,
     body: JSON.stringify(payload)
   });
 
@@ -200,11 +217,10 @@ export async function markProjectFinal(
   projectId: string,
   payload: ProposalProjectPayload
 ): Promise<ProposalProject> {
+  const headers = await createAuthHeaders(true);
   const response = await fetch(`${API_BASE_URL}/projects/${projectId}/mark-final/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers,
     body: JSON.stringify(payload)
   });
 

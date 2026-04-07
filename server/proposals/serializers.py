@@ -55,7 +55,15 @@ class ProposalProjectSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at", "versions", "current_version_id", "generated_proposal"]
+        read_only_fields = [
+            "id",
+            "user_id",
+            "created_at",
+            "updated_at",
+            "versions",
+            "current_version_id",
+            "generated_proposal",
+        ]
 
     def get_current_version_id(self, obj):
         return obj.current_version_id

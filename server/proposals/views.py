@@ -1,6 +1,7 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from .models import ProposalProject, ProposalVersion
@@ -17,6 +18,17 @@ from .services import (
 
 
 SECTION_FIELDS = ["summary", "scope", "deliverables", "milestones", "risks"]
+
+
+def get_request_user_id(request) -> str:
+    user = getattr(request, "user", None)
+    if not user or not user.is_authenticated:
+        raise PermissionDenied("Authentication required.")
+
+    user_id = str(user.get_username() or "").strip()
+    if not user_id:
+        raise PermissionDenied("Authenticated user identity is missing.")
+    return user_id
 
 
 def snapshot_sections(project: ProposalProject) -> dict:
@@ -171,19 +183,19 @@ def apply_request_fields_to_project(project: ProposalProject, payload: dict) -> 
 
 class ProposalProjectViewSet(viewsets.ModelViewSet):
     serializer_class = ProposalProjectSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = ProposalProject.objects.all()
-        user_id = self.request.query_params.get("user_id")
+        if not self.request.user.is_authenticated:
+            return queryset.none()
 
-        if user_id:
-            queryset = queryset.filter(user_id=user_id)
-
-        return queryset.order_by("-updated_at")
+        owner_id = get_request_user_id(self.request)
+        return queryset.filter(user_id=owner_id).order_by("-updated_at")
 
     def perform_create(self, serializer):
-        project = serializer.save()
+        owner_id = get_request_user_id(self.request)
+        project = serializer.save(user_id=owner_id)
         save_generated_proposal_snapshot(project)
         if any(getattr(project, field, "").strip() for field in SECTION_FIELDS):
             create_project_version(project, source="manual", changed_sections=SECTION_FIELDS)
@@ -211,16 +223,15 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["POST"], url_path="restore-version")
     def restore_version(self, request, pk=None):
-        user_id = request.data.get("user_id")
         version_id = request.data.get("version_id")
 
-        if not user_id or not version_id:
+        if not version_id:
             return Response(
-                {"detail": "user_id and version_id are required."},
+                {"detail": "version_id is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        project = get_object_or_404(ProposalProject, id=pk, user_id=user_id)
+        project = self.get_object()
         version = get_object_or_404(project.versions, id=version_id)
 
         project.summary = version.summary
@@ -236,15 +247,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["POST"], url_path="mark-final")
     def mark_final(self, request, pk=None):
-        user_id = request.data.get("user_id")
-
-        if not user_id:
-            return Response(
-                {"detail": "user_id is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        project = get_object_or_404(ProposalProject, id=pk, user_id=user_id)
+        project = self.get_object()
         apply_request_fields_to_project(project, request.data)
         project.status = "completed"
         project.save()
@@ -261,9 +264,9 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def generate_proposal(request):
-    user_id = str(request.data.get("user_id", "")).strip()
+    owner_id = get_request_user_id(request)
     client_name = str(request.data.get("client_name", "")).strip()
     business_type = str(
         request.data.get("business_type")
@@ -287,9 +290,6 @@ def generate_proposal(request):
     ).strip()
     timeline = str(request.data.get("timeline", "")).strip()
     call_notes = str(request.data.get("call_notes", "")).strip()
-
-    if not user_id:
-        return Response({"detail": "user_id is required."}, status=status.HTTP_400_BAD_REQUEST)
 
     if not client_name:
         return Response({"detail": "client_name is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -329,7 +329,7 @@ def generate_proposal(request):
         requirement_sections.append(f"Call notes: {call_notes}")
 
     project = ProposalProject(
-        user_id=user_id,
+        user_id=owner_id,
         client_name=client_name,
         project_name=project_name,
         project_type=business_type,
@@ -347,7 +347,7 @@ def generate_proposal(request):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([permissions.IsAuthenticated])
 def generate_template(request):
     user_prompt = str(request.data.get("user_prompt", "")).strip()
     existing_categories = normalize_string_list(request.data.get("existing_categories", []))

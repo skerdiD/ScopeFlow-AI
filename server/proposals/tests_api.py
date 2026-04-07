@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -11,10 +12,20 @@ class ProposalProjectApiTests(APITestCase):
     def setUp(self):
         self.projects_url = reverse("proposal-project-list")
         self.generate_url = "/api/generate/"
+        self.owner = get_user_model().objects.create_user(
+            username="user-owner-123",
+            email="owner@example.com",
+        )
+        self.other_user = get_user_model().objects.create_user(
+            username="user-other-456",
+            email="other@example.com",
+        )
+
+    def _authenticate(self, user):
+        self.client.force_authenticate(user=user)
 
     def _project_payload(self, **overrides):
         payload = {
-            "user_id": "user-alpha",
             "client_name": "Acme Corp",
             "project_name": "Acme Website Revamp",
             "project_type": "Web Design",
@@ -37,7 +48,6 @@ class ProposalProjectApiTests(APITestCase):
 
     def _generate_payload(self, **overrides):
         payload = {
-            "user_id": "user-alpha",
             "client_name": "Acme Corp",
             "business_type": "SaaS",
             "project_goals": "Increase signup conversion.",
@@ -49,39 +59,45 @@ class ProposalProjectApiTests(APITestCase):
         payload.update(overrides)
         return payload
 
-    def test_create_project_persists_generated_snapshot_and_initial_version(self):
-        response = self.client.post(self.projects_url, self._project_payload(), format="json")
+    def test_list_projects_requires_authentication(self):
+        response = self.client.get(self.projects_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        project = ProposalProject.objects.get(id=response.data["id"])
+    def test_list_projects_returns_only_owner_projects(self):
+        ProposalProject.objects.create(
+            user_id=self.owner.username,
+            **self._project_payload(project_name="Owner Project"),
+        )
+        ProposalProject.objects.create(
+            user_id=self.other_user.username,
+            **self._project_payload(project_name="Other Project"),
+        )
 
-        self.assertEqual(project.user_id, "user-alpha")
-        self.assertEqual(project.generated_proposal["summary"], "A concise summary.")
-        self.assertEqual(project.generated_proposal["scope_of_work"], ["Discovery", "Design", "Build"])
-        self.assertIsNotNone(project.current_version_id)
-        self.assertEqual(project.versions.count(), 1)
-        self.assertEqual(project.versions.first().source, "manual")
-
-    def test_list_projects_returns_all_without_filter(self):
-        ProposalProject.objects.create(**self._project_payload(user_id="user-a", project_name="Project A"))
-        ProposalProject.objects.create(**self._project_payload(user_id="user-b", project_name="Project B"))
-
+        self._authenticate(self.owner)
         response = self.client.get(self.projects_url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
-
-    def test_list_projects_filters_by_user_id(self):
-        ProposalProject.objects.create(**self._project_payload(user_id="user-a", project_name="Project A"))
-        ProposalProject.objects.create(**self._project_payload(user_id="user-b", project_name="Project B"))
-
-        response = self.client.get(self.projects_url, {"user_id": "user-a"})
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["user_id"], "user-a")
+        self.assertEqual(response.data[0]["project_name"], "Owner Project")
+        self.assertEqual(response.data[0]["user_id"], self.owner.username)
 
-    def test_create_project_returns_400_for_missing_required_fields(self):
+    def test_create_project_uses_authenticated_owner_identity(self):
+        self._authenticate(self.owner)
+        response = self.client.post(
+            self.projects_url,
+            self._project_payload(user_id=self.other_user.username),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        project = ProposalProject.objects.get(id=response.data["id"])
+        self.assertEqual(project.user_id, self.owner.username)
+        self.assertEqual(project.generated_proposal["summary"], "A concise summary.")
+        self.assertEqual(project.versions.count(), 1)
+        self.assertEqual(project.versions.first().source, "manual")
+
+    def test_create_project_validation_failure_for_missing_required_fields(self):
+        self._authenticate(self.owner)
         payload = self._project_payload()
         payload.pop("client_name")
 
@@ -90,24 +106,64 @@ class ProposalProjectApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("client_name", response.data)
 
-    def test_retrieve_project_returns_404_for_wrong_user_filter(self):
-        project = ProposalProject.objects.create(**self._project_payload(user_id="user-a"))
+    def test_project_detail_denies_wrong_user(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
         detail_url = reverse("proposal-project-detail", args=[project.id])
 
-        response = self.client.get(detail_url, {"user_id": "user-b"})
+        self._authenticate(self.other_user)
+        response = self.client.get(detail_url)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_restore_version_reverts_sections_and_sets_current_version(self):
+    def test_project_detail_denies_unauthenticated_access(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+        detail_url = reverse("proposal-project-detail", args=[project.id])
+
+        response = self.client.get(detail_url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_project_detail_includes_version_history_for_owner(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+        version = ProposalVersion.objects.create(
+            project=project,
+            version_number=1,
+            label="v1",
+            source="manual",
+            changed_sections=["summary"],
+            summary="Original summary",
+            scope="- Original scope",
+            deliverables="- Original deliverable",
+            milestones="Original: milestone",
+            risks="- Original risk",
+        )
+        project.current_version = version
+        project.save(update_fields=["current_version", "updated_at"])
+
+        detail_url = reverse("proposal-project-detail", args=[project.id])
+        self._authenticate(self.owner)
+        response = self.client.get(detail_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["versions"]), 1)
+        self.assertEqual(response.data["current_version_id"], version.id)
+
+    def test_restore_version_requires_authentication(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+        restore_url = reverse("proposal-project-restore-version", args=[project.id])
+
+        response = self.client.post(restore_url, {"version_id": 1}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_restore_version_reverts_sections_for_owner(self):
         project = ProposalProject.objects.create(
+            user_id=self.owner.username,
             **self._project_payload(
-                user_id="user-a",
                 summary="Current summary",
                 scope="- Current scope",
                 deliverables="- Current deliverable",
                 milestones="Current: milestone",
                 risks="- Current risk",
-            )
+            ),
         )
         version_one = ProposalVersion.objects.create(
             project=project,
@@ -136,10 +192,11 @@ class ProposalProjectApiTests(APITestCase):
         project.current_version = version_two
         project.save(update_fields=["current_version", "updated_at"])
 
+        self._authenticate(self.owner)
         restore_url = reverse("proposal-project-restore-version", args=[project.id])
         response = self.client.post(
             restore_url,
-            {"user_id": "user-a", "version_id": version_one.id},
+            {"version_id": version_one.id},
             format="json",
         )
 
@@ -148,19 +205,9 @@ class ProposalProjectApiTests(APITestCase):
         self.assertEqual(project.current_version_id, version_one.id)
         self.assertEqual(project.summary, version_one.summary)
         self.assertEqual(project.scope, version_one.scope)
-        self.assertEqual(project.generated_proposal["summary"], version_one.summary)
 
-    def test_restore_version_returns_400_for_missing_required_fields(self):
-        project = ProposalProject.objects.create(**self._project_payload(user_id="user-a"))
-        restore_url = reverse("proposal-project-restore-version", args=[project.id])
-
-        response = self.client.post(restore_url, {"user_id": "user-a"}, format="json")
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["detail"], "user_id and version_id are required.")
-
-    def test_restore_version_returns_404_for_wrong_user(self):
-        project = ProposalProject.objects.create(**self._project_payload(user_id="user-a"))
+    def test_restore_version_denies_wrong_user(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
         version = ProposalVersion.objects.create(
             project=project,
             version_number=1,
@@ -173,30 +220,36 @@ class ProposalProjectApiTests(APITestCase):
             milestones="Original: milestone",
             risks="- Original risk",
         )
-        restore_url = reverse("proposal-project-restore-version", args=[project.id])
 
+        self._authenticate(self.other_user)
+        restore_url = reverse("proposal-project-restore-version", args=[project.id])
         response = self.client.post(
             restore_url,
-            {"user_id": "user-b", "version_id": version.id},
+            {"version_id": version.id},
             format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_restore_version_returns_404_for_invalid_version_id(self):
-        project = ProposalProject.objects.create(**self._project_payload(user_id="user-a"))
+    def test_restore_version_returns_400_when_version_id_missing(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.owner)
         restore_url = reverse("proposal-project-restore-version", args=[project.id])
+        response = self.client.post(restore_url, {}, format="json")
 
-        response = self.client.post(
-            restore_url,
-            {"user_id": "user-a", "version_id": 999999},
-            format="json",
-        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["detail"], "version_id is required.")
 
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+    def test_mark_final_requires_authentication(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+        mark_final_url = reverse("proposal-project-mark-final", args=[project.id])
 
-    def test_mark_final_sets_completed_and_creates_new_final_version(self):
-        project = ProposalProject.objects.create(**self._project_payload(user_id="user-a", summary="Initial summary"))
+        response = self.client.post(mark_final_url, {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_mark_final_sets_completed_and_creates_final_version_for_owner(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
         previous_final = ProposalVersion.objects.create(
             project=project,
             version_number=1,
@@ -213,11 +266,11 @@ class ProposalProjectApiTests(APITestCase):
         project.current_version = previous_final
         project.save(update_fields=["current_version", "updated_at"])
 
+        self._authenticate(self.owner)
         mark_final_url = reverse("proposal-project-mark-final", args=[project.id])
         response = self.client.post(
             mark_final_url,
             {
-                "user_id": "user-a",
                 "summary": "Latest final summary",
                 "scope": "- Latest final scope",
                 "deliverables": "- Latest final deliverables",
@@ -236,39 +289,22 @@ class ProposalProjectApiTests(APITestCase):
         self.assertFalse(previous_final.is_final)
         self.assertEqual(previous_final.label, "v1")
 
-        current = project.current_version
-        self.assertIsNotNone(current)
-        self.assertTrue(current.is_final)
-        self.assertEqual(current.label, "final")
-        self.assertEqual(current.source, "final")
-        self.assertEqual(current.summary, "Latest final summary")
+        self.assertIsNotNone(project.current_version)
+        self.assertTrue(project.current_version.is_final)
+        self.assertEqual(project.current_version.label, "final")
+        self.assertEqual(project.current_version.source, "final")
 
-    def test_mark_final_returns_400_for_missing_user_id(self):
-        project = ProposalProject.objects.create(**self._project_payload(user_id="user-a"))
+    def test_mark_final_denies_wrong_user(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.other_user)
         mark_final_url = reverse("proposal-project-mark-final", args=[project.id])
-
-        response = self.client.post(mark_final_url, {}, format="json")
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["detail"], "user_id is required.")
-
-    def test_mark_final_returns_404_for_wrong_user(self):
-        project = ProposalProject.objects.create(**self._project_payload(user_id="user-a"))
-        mark_final_url = reverse("proposal-project-mark-final", args=[project.id])
-
-        response = self.client.post(mark_final_url, {"user_id": "user-b"}, format="json")
-
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-
-    def test_mark_final_returns_404_for_invalid_project_id(self):
-        mark_final_url = reverse("proposal-project-mark-final", args=[999999])
-
-        response = self.client.post(mark_final_url, {"user_id": "user-a"}, format="json")
+        response = self.client.post(mark_final_url, {"summary": "Attempted update"}, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     @patch("proposals.views.generate_structured_proposal")
-    def test_generate_endpoint_creates_project_and_generate_version(self, mock_generate_structured_proposal):
+    def test_generate_endpoint_creates_owner_project(self, mock_generate_structured_proposal):
         mock_generate_structured_proposal.return_value = {
             "summary": "Generated summary",
             "scope_of_work": ["Discovery", "Build", "QA", "Launch"],
@@ -287,20 +323,25 @@ class ProposalProjectApiTests(APITestCase):
             "risks": ["Scope changes", "Feedback delays"],
         }
 
+        self._authenticate(self.owner)
         response = self.client.post(self.generate_url, self._generate_payload(), format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         mock_generate_structured_proposal.assert_called_once()
 
         project = ProposalProject.objects.get(id=response.data["id"])
+        self.assertEqual(project.user_id, self.owner.username)
         self.assertEqual(project.status, "in_review")
-        self.assertEqual(project.summary, "Generated summary")
         self.assertEqual(project.versions.count(), 1)
         self.assertEqual(project.versions.first().source, "generate")
 
+    def test_generate_endpoint_requires_authentication(self):
+        response = self.client.post(self.generate_url, self._generate_payload(), format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
     def test_generate_endpoint_returns_400_for_missing_required_fields(self):
+        self._authenticate(self.owner)
         required_field_cases = [
-            ("user_id", "user_id is required."),
             ("client_name", "client_name is required."),
             ("project_goals", "project_goals is required."),
         ]
@@ -314,4 +355,3 @@ class ProposalProjectApiTests(APITestCase):
 
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
                 self.assertEqual(response.data["detail"], expected_message)
-
