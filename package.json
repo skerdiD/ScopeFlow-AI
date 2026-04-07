@@ -7,11 +7,15 @@
     "install:client": "cd client && npm install --no-workspaces",
     "install:database": "cd database && npm install --no-workspaces",
     "setup": "npm run install:client && npm run install:database",
-    "dev": "npm run dev:client",
-    "dev:client": "cd client && npm run dev",
-    "dev:server": "cd server && .\\.venv\\Scripts\\python.exe manage.py runserver",
+    "dev": "concurrently -k -n CLIENT,SERVER -c cyan,green \"npm run dev:web\" \"npm run dev:server\"",
+    "dev:client": "cd client && npm run dev:web",
+    "dev:web": "cd client && npm run dev:web",
+    "dev:server": "cd server && python manage.py migrate && python manage.py runserver 127.0.0.1:8000",
     "build": "cd client && npm run build",
-    "test": "cd server && .\\.venv\\Scripts\\python.exe manage.py test proposals --keepdb"
+    "test": "cd server && python manage.py test proposals --keepdb"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   },
   "keywords": [],
   "author": "",
