@@ -9,9 +9,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-scopeflow-ai-dev-key")
-DEBUG = os.getenv("DEBUG", "True").strip().lower() in {"1", "true", "yes", "on"}
+DEBUG = os.getenv("DEBUG", "False").strip().lower() in {"1", "true", "yes", "on"}
 
-_allowed_hosts = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "*").split(",") if host.strip()]
+_allowed_hosts = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()]
+_render_external_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+
+if _render_external_hostname and _render_external_hostname not in _allowed_hosts:
+    _allowed_hosts.append(_render_external_hostname)
+
+if DEBUG:
+    for _local_host in ("127.0.0.1", "localhost", "testserver"):
+        if _local_host not in _allowed_hosts:
+            _allowed_hosts.append(_local_host)
+
 ALLOWED_HOSTS = _allowed_hosts or ["*"]
 
 INSTALLED_APPS = [
