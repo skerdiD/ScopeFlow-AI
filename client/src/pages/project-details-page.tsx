@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Clock3, Download, RefreshCcw, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, Download, FileText, RefreshCcw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectForm } from "@/components/project/project-form";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
   deleteProject,
+  exportProjectDocument,
   getProject,
   markProjectFinal,
   restoreProjectVersion,
@@ -23,6 +24,7 @@ import { useAuth } from "@/hooks/use-auth";
 
 type ProposalSectionKey = "summary" | "scope" | "deliverables" | "milestones" | "risks";
 type ProposalMilestone = { title: string; description: string };
+type ExportSource = "current" | "final" | "selected";
 
 const editableSections: { key: ProposalSectionKey; title: string; placeholder: string }[] = [
   {
@@ -109,6 +111,8 @@ export function ProjectDetailsPage() {
   const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
   const [markingFinal, setMarkingFinal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [exportSource, setExportSource] = useState<ExportSource>("current");
+  const [exportingFormat, setExportingFormat] = useState<"pdf" | "docx" | null>(null);
 
   const [projectSaveState, setProjectSaveState] = useState("Idle");
   const [sectionSaveStates, setSectionSaveStates] = useState<Record<ProposalSectionKey, string>>({
@@ -190,6 +194,23 @@ export function ProjectDetailsPage() {
 
     return project.versions.find((version) => version.id === selectedVersionId) ?? null;
   }, [project, selectedVersionId]);
+
+  const finalVersion = useMemo<ProposalVersion | null>(() => {
+    if (!project) {
+      return null;
+    }
+    return project.versions.find((version) => version.is_final) ?? null;
+  }, [project]);
+
+  useEffect(() => {
+    if (exportSource === "final" && !finalVersion) {
+      setExportSource("current");
+      return;
+    }
+    if (exportSource === "selected" && !selectedVersion) {
+      setExportSource("current");
+    }
+  }, [exportSource, finalVersion, selectedVersion]);
 
   const proposalContent = useMemo(() => {
     if (!project) {
@@ -428,14 +449,13 @@ export function ProjectDetailsPage() {
   }
 
   async function handleRestoreVersion(versionId: number) {
-    if (!id || !user?.id) {
+    if (!id) {
       return;
     }
 
     try {
       setRestoringVersion(versionId);
       const updated = await restoreProjectVersion(id, {
-        user_id: user.id,
         version_id: versionId
       });
       setProject(updated);
@@ -533,28 +553,70 @@ export function ProjectDetailsPage() {
     }
   }
 
-  async function handleExportPdf() {
+  function triggerFileDownload(blob: Blob, fileName: string) {
+    const objectUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 1000);
+  }
+
+  function getExportSourcePayload() {
+    if (exportSource === "selected" && selectedVersion) {
+      return {
+        version_id: selectedVersion.id,
+        sourceLabel: selectedVersion.label || "selected version",
+      };
+    }
+
+    if (exportSource === "final") {
+      return {
+        final_version: true,
+        sourceLabel: finalVersion?.label || "final version",
+      };
+    }
+
+    return {
+      sourceLabel: "current content",
+    };
+  }
+
+  async function handleExportDocument(format: "pdf" | "docx") {
     if (!project) {
       return;
     }
 
     try {
-      const { exportProjectToPdf } = await import("@/lib/pdf");
-      exportProjectToPdf(project);
+      setExportingFormat(format);
+      const sourcePayload = getExportSourcePayload();
+      const { blob, filename } = await exportProjectDocument(String(project.id), {
+        format,
+        version_id: "version_id" in sourcePayload ? sourcePayload.version_id : undefined,
+        final_version: "final_version" in sourcePayload ? sourcePayload.final_version : undefined,
+      });
+      triggerFileDownload(blob, filename);
+
       logActivity({
         type: "pdf_exported",
-        title: "Proposal PDF exported",
-        description: `PDF exported for ${project.project_name}.`,
+        title: `Proposal ${format.toUpperCase()} exported`,
+        description: `${format.toUpperCase()} exported for ${project.project_name} (${sourcePayload.sourceLabel}).`,
         projectId: project.id,
         projectName: project.project_name,
         actor: "system",
         metadata: {
-          format: "pdf"
+          format,
+          source: sourcePayload.sourceLabel,
         }
       });
-      toast.success("PDF exported.");
-    } catch {
-      toast.error("Failed to export PDF.");
+      toast.success(`${format.toUpperCase()} exported.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Failed to export ${format.toUpperCase()}.`;
+      toast.error(message);
+    } finally {
+      setExportingFormat(null);
     }
   }
 
@@ -600,9 +662,24 @@ export function ProjectDetailsPage() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Button variant="outline" onClick={handleExportPdf}>
+          <select
+            className="h-10 rounded-xl border border-border bg-background px-3 text-sm outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-ring"
+            value={exportSource}
+            onChange={(event) => setExportSource(event.target.value as ExportSource)}
+          >
+            <option value="current">Export current content</option>
+            {finalVersion ? <option value="final">Export final version ({finalVersion.label})</option> : null}
+            {selectedVersion ? <option value="selected">Export selected version ({selectedVersion.label})</option> : null}
+          </select>
+
+          <Button variant="outline" onClick={() => handleExportDocument("pdf")} disabled={Boolean(exportingFormat)}>
             <Download className="size-4" />
-            Export PDF
+            {exportingFormat === "pdf" ? "Exporting PDF..." : "Export PDF"}
+          </Button>
+
+          <Button variant="outline" onClick={() => handleExportDocument("docx")} disabled={Boolean(exportingFormat)}>
+            <FileText className="size-4" />
+            {exportingFormat === "docx" ? "Exporting DOCX..." : "Export DOCX"}
           </Button>
 
           <Button variant="outline" onClick={handleMarkFinal} disabled={markingFinal}>

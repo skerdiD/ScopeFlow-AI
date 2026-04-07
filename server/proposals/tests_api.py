@@ -1,3 +1,5 @@
+import io
+import zipfile
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -300,6 +302,134 @@ class ProposalProjectApiTests(APITestCase):
         self._authenticate(self.other_user)
         mark_final_url = reverse("proposal-project-mark-final", args=[project.id])
         response = self.client.post(mark_final_url, {"summary": "Attempted update"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_export_project_requires_authentication(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        response = self.client.get(f"/api/projects/{project.id}/export/?file_type=pdf")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_export_project_pdf_returns_file_for_owner(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.owner)
+        response = self.client.get(f"/api/projects/{project.id}/export/?file_type=pdf")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("application/pdf", response["Content-Type"])
+        self.assertIn(".pdf", response["Content-Disposition"])
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_export_project_docx_for_selected_version(self):
+        project = ProposalProject.objects.create(
+            user_id=self.owner.username,
+            **self._project_payload(
+                summary="Current summary",
+                scope="- Current scope",
+                deliverables="- Current deliverable",
+                milestones="Current: milestone",
+                risks="- Current risk",
+            ),
+        )
+        version = ProposalVersion.objects.create(
+            project=project,
+            version_number=1,
+            label="v1",
+            source="manual",
+            changed_sections=["summary"],
+            summary="Versioned summary for export",
+            scope="- Version scope item",
+            deliverables="- Version deliverable item",
+            milestones="Milestone A: Version-specific milestone",
+            risks="- Version risk",
+        )
+
+        self._authenticate(self.owner)
+        response = self.client.get(f"/api/projects/{project.id}/export/?file_type=docx&version_id={version.id}")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            response["Content-Type"],
+        )
+        self.assertIn(".docx", response["Content-Disposition"])
+        self.assertTrue(response.content.startswith(b"PK"))
+
+        archive = zipfile.ZipFile(io.BytesIO(response.content))
+        xml_content = archive.read("word/document.xml").decode("utf-8")
+        self.assertIn("Versioned summary for export", xml_content)
+
+    def test_export_project_supports_final_version_selector(self):
+        project = ProposalProject.objects.create(
+            user_id=self.owner.username,
+            **self._project_payload(summary="Current summary that should not be exported"),
+        )
+        ProposalVersion.objects.create(
+            project=project,
+            version_number=1,
+            label="final",
+            source="final",
+            changed_sections=["summary"],
+            summary="Final summary for client export",
+            scope="- Final scope item",
+            deliverables="- Final deliverable",
+            milestones="Launch: Final delivery checkpoint",
+            risks="- Final risk",
+            is_final=True,
+        )
+
+        self._authenticate(self.owner)
+        response = self.client.get(f"/api/projects/{project.id}/export/?file_type=docx&final_version=true")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        archive = zipfile.ZipFile(io.BytesIO(response.content))
+        xml_content = archive.read("word/document.xml").decode("utf-8")
+        self.assertIn("Final summary for client export", xml_content)
+        self.assertNotIn("Current summary that should not be exported", xml_content)
+
+    def test_export_project_invalid_format_returns_400(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.owner)
+        response = self.client.get(f"/api/projects/{project.id}/export/?file_type=txt")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["detail"], "file_type must be either 'pdf' or 'docx'.")
+
+    def test_export_project_invalid_version_id_returns_400(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.owner)
+        response = self.client.get(f"/api/projects/{project.id}/export/?file_type=pdf&version_id=abc")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["detail"], "version_id must be a numeric value.")
+
+    def test_export_project_returns_404_for_missing_version(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.owner)
+        response = self.client.get(f"/api/projects/{project.id}/export/?file_type=pdf&version_id=999999")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_export_project_returns_404_for_missing_final_version(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.owner)
+        response = self.client.get(f"/api/projects/{project.id}/export/?file_type=pdf&final_version=true")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data["detail"], "Final version not found for this project.")
+
+    def test_export_project_denies_wrong_user(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.other_user)
+        response = self.client.get(f"/api/projects/{project.id}/export/?file_type=pdf")
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 

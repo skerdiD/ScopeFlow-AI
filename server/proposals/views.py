@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from django.http import HttpResponse
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
@@ -14,6 +15,12 @@ from .services import (
     GeminiQuotaExceededError,
     generate_template_draft,
     generate_structured_proposal,
+)
+from .services.export_service import (
+    build_export_filename,
+    build_export_sections,
+    generate_docx_export,
+    generate_pdf_export,
 )
 
 
@@ -261,6 +268,88 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
         save_generated_proposal_snapshot(project)
 
         return Response(ProposalProjectSerializer(project).data)
+
+    @action(detail=True, methods=["GET"], url_path="export")
+    def export_project(self, request, pk=None):
+        project = self.get_object()
+        export_format = str(
+            request.query_params.get("file_type", "") or request.query_params.get("export_format", "")
+        ).strip().lower()
+        version_id_raw = str(request.query_params.get("version_id", "")).strip()
+        final_version_raw = str(request.query_params.get("final_version", "")).strip().lower()
+
+        if export_format not in {"pdf", "docx"}:
+            return Response(
+                {"detail": "file_type must be either 'pdf' or 'docx'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        selected_version = None
+        source_label = "current"
+
+        if version_id_raw:
+            try:
+                version_id = int(version_id_raw)
+            except ValueError:
+                return Response(
+                    {"detail": "version_id must be a numeric value."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            selected_version = get_object_or_404(project.versions, id=version_id)
+            source_label = selected_version.label or f"v{selected_version.version_number}"
+        elif final_version_raw in {"1", "true", "yes", "on"}:
+            selected_version = project.versions.filter(is_final=True).order_by("-created_at").first()
+            if not selected_version:
+                return Response(
+                    {"detail": "Final version not found for this project."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            source_label = selected_version.label or "final"
+
+        summary = selected_version.summary if selected_version else project.summary
+        scope = selected_version.scope if selected_version else project.scope
+        deliverables = selected_version.deliverables if selected_version else project.deliverables
+        milestones = selected_version.milestones if selected_version else project.milestones
+        risks = selected_version.risks if selected_version else project.risks
+
+        sections = build_export_sections(
+            summary=summary,
+            scope=scope,
+            deliverables=deliverables,
+            milestones=milestones,
+            risks=risks,
+        )
+
+        if export_format == "pdf":
+            document_bytes = generate_pdf_export(
+                project_name=project.project_name,
+                client_name=project.client_name,
+                project_type=project.project_type,
+                budget=project.budget,
+                timeline=project.timeline,
+                source_label=source_label,
+                sections=sections,
+            )
+            content_type = "application/pdf"
+            extension = "pdf"
+        else:
+            document_bytes = generate_docx_export(
+                project_name=project.project_name,
+                client_name=project.client_name,
+                project_type=project.project_type,
+                budget=project.budget,
+                timeline=project.timeline,
+                source_label=source_label,
+                sections=sections,
+            )
+            content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            extension = "docx"
+
+        filename = build_export_filename(project.project_name, source_label, extension)
+
+        response = HttpResponse(document_bytes, content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 @api_view(["POST"])

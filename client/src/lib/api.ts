@@ -81,6 +81,8 @@ export type ProposalProjectPayload = {
   status: string;
 };
 
+export type ExportFormat = "pdf" | "docx";
+
 export type GenerateProposalPayload = {
   user_id: string;
   client_name: string;
@@ -201,7 +203,7 @@ export async function deleteProject(id: string): Promise<void> {
 
 export async function restoreProjectVersion(
   projectId: string,
-  payload: { user_id: string; version_id: number }
+  payload: { version_id: number }
 ): Promise<ProposalProject> {
   const headers = await createAuthHeaders(true);
   const response = await fetch(`${API_BASE_URL}/projects/${projectId}/restore-version/`, {
@@ -211,6 +213,73 @@ export async function restoreProjectVersion(
   });
 
   return handleResponse<ProposalProject>(response);
+}
+
+function parseDownloadFilename(contentDisposition: string | null, fallback: string): string {
+  if (!contentDisposition) {
+    return fallback;
+  }
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+
+  const quotedMatch = contentDisposition.match(/filename="([^"]+)"/i);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1];
+  }
+
+  const plainMatch = contentDisposition.match(/filename=([^;]+)/i);
+  if (plainMatch?.[1]) {
+    return plainMatch[1].trim();
+  }
+
+  return fallback;
+}
+
+export async function exportProjectDocument(
+  projectId: string,
+  payload: {
+    format: ExportFormat;
+    version_id?: number;
+    final_version?: boolean;
+  }
+): Promise<{ blob: Blob; filename: string }> {
+  const headers = await createAuthHeaders();
+  const params = new URLSearchParams({ file_type: payload.format });
+
+  if (typeof payload.version_id === "number") {
+    params.set("version_id", String(payload.version_id));
+  } else if (payload.final_version) {
+    params.set("final_version", "true");
+  }
+
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/export/?${params.toString()}`, {
+    method: "GET",
+    headers,
+  });
+
+  if (!response.ok) {
+    let message = "Failed to export project.";
+    try {
+      const data = await response.json();
+      message = data.detail || JSON.stringify(data);
+    } catch {
+      message = response.statusText || message;
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const fallbackFilename = `project-${projectId}.${payload.format}`;
+  const filename = parseDownloadFilename(response.headers.get("Content-Disposition"), fallbackFilename);
+
+  return { blob, filename };
 }
 
 export async function markProjectFinal(
