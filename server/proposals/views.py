@@ -1,12 +1,13 @@
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
 from rest_framework import permissions, status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from .models import ProposalProject, ProposalVersion
 from .serializers import ProposalProjectSerializer
+from .throttling import GenerateProposalRateThrottle, GenerateTemplateRateThrottle
 from .services import (
     GeminiApiKeyLeakedError,
     GeminiApiKeyMissingError,
@@ -25,6 +26,19 @@ from .services.export_service import (
 
 
 SECTION_FIELDS = ["summary", "scope", "deliverables", "milestones", "risks"]
+INTAKE_MAX_LENGTHS = {
+    "client_name": 255,
+    "business_type": 120,
+    "project_goals": 2000,
+    "required_features": 4000,
+    "budget_range": 120,
+    "timeline": 120,
+    "call_notes": 4000,
+    "project_name": 255,
+}
+TEMPLATE_PROMPT_MAX_LENGTH = 3000
+TEMPLATE_CATEGORY_MAX_ITEMS = 40
+TEMPLATE_CATEGORY_ITEM_MAX_LENGTH = 64
 
 
 def get_request_user_id(request) -> str:
@@ -354,6 +368,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
+@throttle_classes([GenerateProposalRateThrottle])
 def generate_proposal(request):
     owner_id = get_request_user_id(request)
     client_name = str(request.data.get("client_name", "")).strip()
@@ -379,6 +394,23 @@ def generate_proposal(request):
     ).strip()
     timeline = str(request.data.get("timeline", "")).strip()
     call_notes = str(request.data.get("call_notes", "")).strip()
+
+    intake_values = {
+        "client_name": client_name,
+        "business_type": business_type,
+        "project_goals": project_goals,
+        "required_features": required_features,
+        "budget_range": budget_range,
+        "timeline": timeline,
+        "call_notes": call_notes,
+    }
+    for field_name, max_length in INTAKE_MAX_LENGTHS.items():
+        field_value = intake_values.get(field_name, "")
+        if len(field_value) > max_length:
+            return Response(
+                {"detail": f"{field_name} exceeds the maximum length of {max_length} characters."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
     if not client_name:
         return Response({"detail": "client_name is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -410,6 +442,16 @@ def generate_proposal(request):
         return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
     project_name = str(request.data.get("project_name", "")).strip() or f"{client_name} Proposal"
+    if len(project_name) > INTAKE_MAX_LENGTHS["project_name"]:
+        return Response(
+            {
+                "detail": (
+                    f"project_name exceeds the maximum length of "
+                    f"{INTAKE_MAX_LENGTHS['project_name']} characters."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     requirement_sections = [f"Project goals: {project_goals}"]
     if required_features:
@@ -437,12 +479,40 @@ def generate_proposal(request):
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
+@throttle_classes([GenerateTemplateRateThrottle])
 def generate_template(request):
     user_prompt = str(request.data.get("user_prompt", "")).strip()
     existing_categories = normalize_string_list(request.data.get("existing_categories", []))
 
     if not user_prompt:
         return Response({"detail": "user_prompt is required."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(user_prompt) > TEMPLATE_PROMPT_MAX_LENGTH:
+        return Response(
+            {"detail": f"user_prompt exceeds the maximum length of {TEMPLATE_PROMPT_MAX_LENGTH} characters."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if len(existing_categories) > TEMPLATE_CATEGORY_MAX_ITEMS:
+        return Response(
+            {
+                "detail": (
+                    f"existing_categories allows up to {TEMPLATE_CATEGORY_MAX_ITEMS} items."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    for category in existing_categories:
+        if len(category) > TEMPLATE_CATEGORY_ITEM_MAX_LENGTH:
+            return Response(
+                {
+                    "detail": (
+                        "each existing_categories item must be at most "
+                        f"{TEMPLATE_CATEGORY_ITEM_MAX_LENGTH} characters."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
     try:
         generated_template = generate_template_draft(

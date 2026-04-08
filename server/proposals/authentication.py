@@ -2,6 +2,7 @@ import os
 from typing import Any
 
 import requests
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import authentication
 from rest_framework import exceptions
@@ -42,20 +43,26 @@ class SupabaseTokenAuthentication(authentication.BaseAuthentication):
         return self.keyword
 
     def _fetch_supabase_user(self, token: str) -> dict[str, Any]:
-        supabase_url = (
-            os.getenv("SUPABASE_URL", "").strip()
-            or os.getenv("VITE_SUPABASE_URL", "").strip()
-        )
-        supabase_anon_key = (
-            os.getenv("SUPABASE_ANON_KEY", "").strip()
-            or os.getenv("VITE_SUPABASE_ANON_KEY", "").strip()
-            or os.getenv("VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY", "").strip()
-        )
+        supabase_url = os.getenv("SUPABASE_URL", "").strip()
+        supabase_anon_key = os.getenv("SUPABASE_ANON_KEY", "").strip()
+
+        if settings.DEBUG and not supabase_url:
+            supabase_url = os.getenv("VITE_SUPABASE_URL", "").strip()
+
+        if settings.DEBUG and not supabase_anon_key:
+            supabase_anon_key = (
+                os.getenv("VITE_SUPABASE_ANON_KEY", "").strip()
+                or os.getenv("VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY", "").strip()
+            )
 
         if not supabase_url or not supabase_anon_key:
             raise exceptions.AuthenticationFailed("Supabase auth environment is not configured.")
 
         normalized_url = supabase_url.rstrip("/")
+
+        if not normalized_url.lower().startswith("https://") and not settings.DEBUG:
+            raise exceptions.AuthenticationFailed("SUPABASE_URL must use HTTPS in production.")
+
         endpoint = f"{normalized_url}/auth/v1/user"
 
         try:
@@ -66,9 +73,10 @@ class SupabaseTokenAuthentication(authentication.BaseAuthentication):
                     "apikey": supabase_anon_key,
                 },
                 timeout=10,
+                allow_redirects=False,
             )
         except requests.RequestException as exc:
-            raise exceptions.AuthenticationFailed(f"Supabase auth request failed: {str(exc)}") from exc
+            raise exceptions.AuthenticationFailed("Supabase auth request failed.") from exc
 
         if response.status_code != 200:
             raise exceptions.AuthenticationFailed("Invalid or expired auth token.")

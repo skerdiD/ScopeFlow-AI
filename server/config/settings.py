@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -8,21 +9,42 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-scopeflow-ai-dev-key")
-DEBUG = os.getenv("DEBUG", "False").strip().lower() in {"1", "true", "yes", "on"}
 
-_allowed_hosts = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()]
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_csv(name: str) -> list[str]:
+    return [value.strip() for value in os.getenv(name, "").split(",") if value.strip()]
+
+
+IS_TEST = "test" in sys.argv
+DEFAULT_DEV_SECRET_KEY = "django-insecure-scopeflow-ai-dev-key"
+
+SECRET_KEY = os.getenv("SECRET_KEY", "").strip() or DEFAULT_DEV_SECRET_KEY
+DEBUG = _env_bool("DEBUG", False)
+
+if not DEBUG and not IS_TEST and SECRET_KEY == DEFAULT_DEV_SECRET_KEY:
+    raise ImproperlyConfigured("SECRET_KEY must be set to a strong value when DEBUG=False.")
+
+_allowed_hosts = _env_csv("ALLOWED_HOSTS")
 _render_external_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
 
 if _render_external_hostname and _render_external_hostname not in _allowed_hosts:
     _allowed_hosts.append(_render_external_hostname)
 
-if DEBUG:
+if DEBUG or IS_TEST:
     for _local_host in ("127.0.0.1", "localhost", "testserver"):
         if _local_host not in _allowed_hosts:
             _allowed_hosts.append(_local_host)
 
-ALLOWED_HOSTS = _allowed_hosts or ["*"]
+if not _allowed_hosts and not (DEBUG or IS_TEST):
+    raise ImproperlyConfigured("ALLOWED_HOSTS must be configured when DEBUG=False.")
+
+ALLOWED_HOSTS = _allowed_hosts
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -117,7 +139,33 @@ USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-CORS_ALLOW_ALL_ORIGINS = True
+_cors_allowed_origins = _env_csv("CORS_ALLOWED_ORIGINS")
+if not _cors_allowed_origins and (DEBUG or IS_TEST):
+    _cors_allowed_origins = [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:4173",
+        "http://localhost:4173",
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+    ]
+
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = _cors_allowed_origins
+CORS_ALLOW_CREDENTIALS = _env_bool("CORS_ALLOW_CREDENTIALS", False)
+CSRF_TRUSTED_ORIGINS = _env_csv("CSRF_TRUSTED_ORIGINS")
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = _env_bool("SECURE_SSL_REDIRECT", False)
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = "DENY"
+    SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+    SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
+    SECURE_HSTS_PRELOAD = _env_bool("SECURE_HSTS_PRELOAD", True)
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -126,5 +174,15 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
-    ]
+    ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": os.getenv("DRF_THROTTLE_ANON", "120/min"),
+        "user": os.getenv("DRF_THROTTLE_USER", "600/min"),
+        "generate_proposal": os.getenv("DRF_THROTTLE_GENERATE_PROPOSAL", "30/hour"),
+        "generate_template": os.getenv("DRF_THROTTLE_GENERATE_TEMPLATE", "30/hour"),
+    },
 }
