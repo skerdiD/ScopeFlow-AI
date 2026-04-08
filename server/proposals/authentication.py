@@ -1,15 +1,25 @@
 import os
+from hashlib import sha256
 from typing import Any
 
 import requests
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from rest_framework import authentication
 from rest_framework import exceptions
 
 
 class SupabaseTokenAuthentication(authentication.BaseAuthentication):
     keyword = "Bearer"
+
+    @staticmethod
+    def _get_auth_cache_ttl_seconds() -> int:
+        raw_value = os.getenv("SUPABASE_AUTH_CACHE_TTL", "30").strip()
+        try:
+            return max(0, int(raw_value))
+        except ValueError:
+            return 30
 
     def authenticate(self, request):
         auth_header = authentication.get_authorization_header(request).decode("utf-8").strip()
@@ -43,6 +53,14 @@ class SupabaseTokenAuthentication(authentication.BaseAuthentication):
         return self.keyword
 
     def _fetch_supabase_user(self, token: str) -> dict[str, Any]:
+        cache_ttl_seconds = self._get_auth_cache_ttl_seconds()
+        cache_key = f"supabase_auth_user:{sha256(token.encode('utf-8')).hexdigest()}"
+
+        if cache_ttl_seconds > 0:
+            cached_payload = cache.get(cache_key)
+            if isinstance(cached_payload, dict):
+                return cached_payload
+
         supabase_url = os.getenv("SUPABASE_URL", "").strip()
         supabase_anon_key = os.getenv("SUPABASE_ANON_KEY", "").strip()
 
@@ -88,6 +106,9 @@ class SupabaseTokenAuthentication(authentication.BaseAuthentication):
 
         if not isinstance(payload, dict):
             raise exceptions.AuthenticationFailed("Supabase auth response payload was invalid.")
+
+        if cache_ttl_seconds > 0:
+            cache.set(cache_key, payload, timeout=cache_ttl_seconds)
 
         return payload
 

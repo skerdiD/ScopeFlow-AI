@@ -67,3 +67,36 @@ class ProposalProjectSerializer(serializers.ModelSerializer):
 
     def get_current_version_id(self, obj):
         return obj.current_version_id
+
+
+class ProposalProjectListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProposalProject
+        fields = [
+            "id",
+            "user_id",
+            "client_name",
+            "project_name",
+            "project_type",
+            "budget",
+            "timeline",
+            "requirements",
+            "summary",
+            "scope",
+            "deliverables",
+            "milestones",
+            "risks",
+            "missing_information",
+            "scope_risks",
+            "unclear_requirements",
+            "suggested_questions",
+            "status",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "user_id",
+            "created_at",
+            "updated_at",
+        ]

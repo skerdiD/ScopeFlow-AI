@@ -8,7 +8,7 @@ class ProposalProject(models.Model):
         ("completed", "Completed"),
     ]
 
-    user_id = models.CharField(max_length=255)
+    user_id = models.CharField(max_length=255, db_index=True)
     client_name = models.CharField(max_length=255)
     project_name = models.CharField(max_length=255)
     project_type = models.CharField(max_length=120)
@@ -38,6 +38,9 @@ class ProposalProject(models.Model):
 
     class Meta:
         ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["user_id", "updated_at"], name="proposal_user_updated_idx"),
+        ]
 
     def __str__(self):
         return self.project_name
@@ -70,6 +73,9 @@ class ProposalVersion(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["project", "is_final", "created_at"], name="proposal_ver_export_idx"),
+        ]
 
     def __str__(self):
         return f"{self.project.project_name} - {self.label}"

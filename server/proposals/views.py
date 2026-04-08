@@ -1,12 +1,13 @@
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
+from django.db.models import Max
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from .models import ProposalProject, ProposalVersion
-from .serializers import ProposalProjectSerializer
+from .serializers import ProposalProjectListSerializer, ProposalProjectSerializer
 from .throttling import GenerateProposalRateThrottle, GenerateTemplateRateThrottle
 from .services import (
     GeminiApiKeyLeakedError,
@@ -39,6 +40,28 @@ INTAKE_MAX_LENGTHS = {
 TEMPLATE_PROMPT_MAX_LENGTH = 3000
 TEMPLATE_CATEGORY_MAX_ITEMS = 40
 TEMPLATE_CATEGORY_ITEM_MAX_LENGTH = 64
+LIST_QUERY_FIELDS = [
+    "id",
+    "user_id",
+    "client_name",
+    "project_name",
+    "project_type",
+    "budget",
+    "timeline",
+    "requirements",
+    "summary",
+    "scope",
+    "deliverables",
+    "milestones",
+    "risks",
+    "missing_information",
+    "scope_risks",
+    "unclear_requirements",
+    "suggested_questions",
+    "status",
+    "created_at",
+    "updated_at",
+]
 
 
 def get_request_user_id(request) -> str:
@@ -74,7 +97,8 @@ def create_project_version(
     if is_final:
         relabel_previous_final_versions(project)
 
-    version_number = project.versions.count() + 1
+    latest_version_number = project.versions.aggregate(max_version=Max("version_number"))["max_version"] or 0
+    version_number = latest_version_number + 1
     version_label = label or ("final" if is_final else f"v{version_number}")
 
     version = ProposalVersion.objects.create(
@@ -206,13 +230,22 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
     serializer_class = ProposalProjectSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_serializer_class(self):
+        if self.action == "list":
+            return ProposalProjectListSerializer
+        return ProposalProjectSerializer
+
     def get_queryset(self):
         queryset = ProposalProject.objects.all()
         if not self.request.user.is_authenticated:
             return queryset.none()
 
         owner_id = get_request_user_id(self.request)
-        return queryset.filter(user_id=owner_id).order_by("-updated_at")
+        owner_queryset = queryset.filter(user_id=owner_id).order_by("-updated_at")
+        if self.action == "list":
+            return owner_queryset.only(*LIST_QUERY_FIELDS)
+
+        return owner_queryset.select_related("current_version").prefetch_related("versions")
 
     def perform_create(self, serializer):
         owner_id = get_request_user_id(self.request)
