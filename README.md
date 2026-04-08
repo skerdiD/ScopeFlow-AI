@@ -69,7 +69,7 @@ ScopeFlow AI helps turn rough client requirements into structured proposals with
 - Django REST Framework
 
 ### Database
-- PostgreSQL
+- Supabase
 
 ### Auth / External
 - Supabase token verification
