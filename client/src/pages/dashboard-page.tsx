@@ -302,7 +302,7 @@ export function DashboardPage() {
 
         <Card className="border-border/70 shadow-sm">
           <CardContent className="p-0">
-            <div className="hidden grid-cols-[minmax(0,1.4fr)_130px_130px_220px] items-center border-b px-6 py-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.2fr)_130px_130px_minmax(340px,1fr)] items-center border-b px-6 py-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground md:grid">
               <p>Project</p>
               <p>Status</p>
               <p>Updated</p>
@@ -343,7 +343,7 @@ export function DashboardPage() {
               <div className="divide-y">
                 {allProjects.map((project) => (
                   <div key={project.id} className="px-6 py-4">
-                    <div className="hidden grid-cols-[minmax(0,1.4fr)_130px_130px_220px] items-center gap-3 md:grid">
+                    <div className="hidden grid-cols-[minmax(0,1.2fr)_130px_130px_minmax(340px,1fr)] items-center gap-3 md:grid">
                       <div className="min-w-0">
                         <Link to={`/projects/${project.id}`} className="truncate font-semibold hover:text-primary">
                           {project.project_name}
@@ -354,10 +354,10 @@ export function DashboardPage() {
                       </div>
 
                       <Badge variant={getStatusVariant(project.status)}>{getStatusLabel(project.status)}</Badge>
-                      <p className="text-sm text-muted-foreground">{formatRelativeTime(project.updated_at)}</p>
+                      <p className="whitespace-nowrap text-sm text-muted-foreground">{formatRelativeTime(project.updated_at)}</p>
 
-                      <div className="flex items-center justify-end gap-2">
-                        <Button variant="outline" size="sm" asChild>
+                      <div className="flex flex-nowrap items-center justify-end gap-2">
+                        <Button variant="outline" size="sm" className="shrink-0" asChild>
                           <Link to={`/projects/${project.id}`}>
                             <Eye className="size-4" />
                             Open
@@ -366,6 +366,7 @@ export function DashboardPage() {
                         <Button
                           variant="outline"
                           size="sm"
+                          className="shrink-0"
                           onClick={() => handleDuplicate(project)}
                           disabled={activeDuplicateId === project.id}
                         >
@@ -375,6 +376,7 @@ export function DashboardPage() {
                         <Button
                           variant="outline"
                           size="sm"
+                          className="shrink-0"
                           onClick={() => handleDelete(project.id)}
                           disabled={activeDeleteId === project.id}
                         >
