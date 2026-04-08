@@ -1,24 +1,34 @@
+import { Suspense, lazy, type ReactNode } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import { AuthLayout } from "@/components/layout/auth-layout";
 import { AppLayout } from "@/components/layout/app-layout";
-import { HomePage } from "@/pages/home-page";
-import { LoginPage } from "@/pages/login-page";
-import { SignupPage } from "@/pages/signup-page";
-import { DashboardPage } from "@/pages/dashboard-page";
-import { NewProjectPage } from "@/pages/new-project-page";
-import { NewTemplatePage } from "@/pages/new-template-page";
-import { EditTemplatePage } from "@/pages/edit-template-page";
-import { ProjectDetailsPage } from "@/pages/project-details-page";
-import { TemplatesPage } from "@/pages/templates-page";
-import { ActivityPage } from "@/pages/activity-page";
-import { SettingsPage } from "@/pages/settings-page";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { GuestRoute } from "@/components/auth/guest-route";
+
+const HomePage = lazy(async () => ({ default: (await import("@/pages/home-page")).HomePage }));
+const LoginPage = lazy(async () => ({ default: (await import("@/pages/login-page")).LoginPage }));
+const SignupPage = lazy(async () => ({ default: (await import("@/pages/signup-page")).SignupPage }));
+const DashboardPage = lazy(async () => ({ default: (await import("@/pages/dashboard-page")).DashboardPage }));
+const NewProjectPage = lazy(async () => ({ default: (await import("@/pages/new-project-page")).NewProjectPage }));
+const NewTemplatePage = lazy(async () => ({ default: (await import("@/pages/new-template-page")).NewTemplatePage }));
+const EditTemplatePage = lazy(async () => ({ default: (await import("@/pages/edit-template-page")).EditTemplatePage }));
+const ProjectDetailsPage = lazy(async () => ({ default: (await import("@/pages/project-details-page")).ProjectDetailsPage }));
+const TemplatesPage = lazy(async () => ({ default: (await import("@/pages/templates-page")).TemplatesPage }));
+const ActivityPage = lazy(async () => ({ default: (await import("@/pages/activity-page")).ActivityPage }));
+const SettingsPage = lazy(async () => ({ default: (await import("@/pages/settings-page")).SettingsPage }));
+
+function withPageLoader(element: ReactNode) {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading...</div>}>
+      {element}
+    </Suspense>
+  );
+}
 
 export const router = createBrowserRouter([
   {
     path: "/",
-    element: <HomePage />
+    element: withPageLoader(<HomePage />)
   },
   {
     element: (
@@ -29,11 +39,11 @@ export const router = createBrowserRouter([
     children: [
       {
         path: "/login",
-        element: <LoginPage />
+        element: withPageLoader(<LoginPage />)
       },
       {
         path: "/signup",
-        element: <SignupPage />
+        element: withPageLoader(<SignupPage />)
       }
     ]
   },
@@ -46,39 +56,39 @@ export const router = createBrowserRouter([
     children: [
       {
         path: "/dashboard",
-        element: <DashboardPage />
+        element: withPageLoader(<DashboardPage />)
       },
       {
         path: "/projects",
-        element: <DashboardPage />
+        element: withPageLoader(<DashboardPage />)
       },
       {
         path: "/projects/new",
-        element: <NewProjectPage />
+        element: withPageLoader(<NewProjectPage />)
       },
       {
         path: "/templates",
-        element: <TemplatesPage />
+        element: withPageLoader(<TemplatesPage />)
       },
       {
         path: "/templates/new",
-        element: <NewTemplatePage />
+        element: withPageLoader(<NewTemplatePage />)
       },
       {
         path: "/templates/:templateId/edit",
-        element: <EditTemplatePage />
+        element: withPageLoader(<EditTemplatePage />)
       },
       {
         path: "/activity",
-        element: <ActivityPage />
+        element: withPageLoader(<ActivityPage />)
       },
       {
         path: "/settings",
-        element: <SettingsPage />
+        element: withPageLoader(<SettingsPage />)
       },
       {
         path: "/projects/:id",
-        element: <ProjectDetailsPage />
+        element: withPageLoader(<ProjectDetailsPage />)
       }
     ]
   }

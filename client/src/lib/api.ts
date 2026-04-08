@@ -76,6 +76,11 @@ export type ProposalProject = {
   updated_at: string;
 };
 
+export type ProposalProjectListItem = Omit<
+  ProposalProject,
+  "generated_proposal" | "current_version_id" | "versions"
+>;
+
 export type ProposalProjectPayload = {
   user_id: string;
   client_name: string;
@@ -156,11 +161,11 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function getProjects(userId: string): Promise<ProposalProject[]> {
+export async function getProjects(userId: string): Promise<ProposalProjectListItem[]> {
   void userId;
   const headers = await createAuthHeaders();
   const response = await fetch(`${getApiBaseUrl()}/projects/`, { headers });
-  return handleResponse<ProposalProject[]>(response);
+  return handleResponse<ProposalProjectListItem[]>(response);
 }
 
 export async function getProject(id: string, userId: string): Promise<ProposalProject> {

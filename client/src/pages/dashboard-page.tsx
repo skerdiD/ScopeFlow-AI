@@ -1,17 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
+  Activity,
   AlertTriangle,
   ArrowUpRight,
+  Bot,
   CheckCircle2,
   Clock3,
   Copy,
   Eye,
   FileText,
+  RefreshCw,
   FolderKanban,
   PlusCircle,
   Search,
   Sparkles,
+  TrendingUp,
   Trash2
 } from "lucide-react";
 import { toast } from "sonner";
@@ -21,7 +25,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { createProject, deleteProject, getProjects, type ProposalProject, type ProposalProjectPayload } from "@/lib/api";
+import {
+  createProject,
+  deleteProject,
+  getProjects,
+  type ProposalProjectListItem,
+  type ProposalProjectPayload
+} from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
 type StatusFilter = "all" | "draft" | "in_review" | "completed";
@@ -71,7 +81,7 @@ export function DashboardPage() {
   const { pathname } = useLocation();
   const isAllProjectsView = pathname === "/projects";
 
-  const [projects, setProjects] = useState<ProposalProject[]>([]);
+  const [projects, setProjects] = useState<ProposalProjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -82,28 +92,28 @@ export function DashboardPage() {
   const [activeDeleteId, setActiveDeleteId] = useState<number | null>(null);
   const [activeDuplicateId, setActiveDuplicateId] = useState<number | null>(null);
 
-  useEffect(() => {
-    async function loadProjects() {
-      if (!user?.id) {
-        return;
-      }
-
-      try {
-        setLoading(true);
-        const data = await getProjects(user.id);
-        setProjects(data);
-        setErrorMessage("");
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to fetch projects.";
-        setErrorMessage(message);
-        toast.error(message);
-      } finally {
-        setLoading(false);
-      }
+  const loadProjects = useCallback(async () => {
+    if (!user?.id) {
+      return;
     }
 
-    loadProjects();
+    try {
+      setLoading(true);
+      const data = await getProjects(user.id);
+      setProjects(data);
+      setErrorMessage("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to fetch projects.";
+      setErrorMessage(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
   }, [user?.id]);
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
 
   const sortedProjects = useMemo(() => {
     return [...projects].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
@@ -143,13 +153,15 @@ export function DashboardPage() {
 
   const recentProjects = useMemo(() => sortedProjects.slice(0, 6), [sortedProjects]);
   const recentActivity = useMemo(() => sortedProjects.slice(0, 5), [sortedProjects]);
+  const inReviewCount = useMemo(() => projects.filter((project) => project.status === "in_review").length, [projects]);
+  const completedCount = useMemo(() => projects.filter((project) => project.status === "completed").length, [projects]);
 
   const completionRate = useMemo(() => {
     if (projects.length === 0) {
       return 0;
     }
-    return Math.round((projects.filter((project) => project.status === "completed").length / projects.length) * 100);
-  }, [projects]);
+    return Math.round((completedCount / projects.length) * 100);
+  }, [completedCount, projects.length]);
 
   const draftWarningsCount = useMemo(() => {
     const warningThresholdMs = 14 * 24 * 60 * 60 * 1000;
@@ -162,26 +174,41 @@ export function DashboardPage() {
     }).length;
   }, [projects]);
 
+  const projectsUpdatedThisWeek = useMemo(() => {
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    return projects.filter((project) => now - new Date(project.updated_at).getTime() <= sevenDaysMs).length;
+  }, [projects]);
+
   const metrics = useMemo(
     () => [
       {
         label: "Active Projects",
         value: String(projects.length),
         description: "Total proposals tracked in workspace",
+        meta: `${projectsUpdatedThisWeek} updated in the last 7 days`,
+        progress: projects.length === 0 ? 0 : Math.round((projectsUpdatedThisWeek / projects.length) * 100),
         icon: FolderKanban,
         tone: "accent" as const
       },
       {
         label: "In Review",
-        value: String(projects.filter((project) => project.status === "in_review").length),
+        value: String(inReviewCount),
         description: "Ready for scope refinement and approval",
+        meta:
+          projects.length === 0
+            ? "No active pipeline yet"
+            : `${Math.round((inReviewCount / projects.length) * 100)}% of current pipeline`,
+        progress: projects.length === 0 ? 0 : Math.round((inReviewCount / projects.length) * 100),
         icon: Sparkles,
         tone: "neutral" as const
       },
       {
         label: "Completed",
-        value: String(projects.filter((project) => project.status === "completed").length),
+        value: String(completedCount),
         description: "Finalized proposals ready for handoff",
+        meta: completionRate >= 60 ? "Strong delivery momentum" : "Opportunity to improve delivery pace",
+        progress: completionRate,
         icon: CheckCircle2,
         tone: "success" as const
       },
@@ -189,11 +216,13 @@ export function DashboardPage() {
         label: "Draft Warnings",
         value: String(draftWarningsCount),
         description: "Drafts unchanged for more than 14 days",
+        meta: draftWarningsCount === 0 ? "No stale drafts detected" : "Needs prioritization this week",
+        progress: projects.length === 0 ? 0 : Math.round((draftWarningsCount / projects.length) * 100),
         icon: AlertTriangle,
         tone: "warning" as const
       }
     ],
-    [draftWarningsCount, projects]
+    [completedCount, completionRate, draftWarningsCount, inReviewCount, projects.length, projectsUpdatedThisWeek]
   );
 
   async function handleDelete(projectId: number) {
@@ -211,7 +240,7 @@ export function DashboardPage() {
     }
   }
 
-  async function handleDuplicate(project: ProposalProject) {
+  async function handleDuplicate(project: ProposalProjectListItem) {
     try {
       setActiveDuplicateId(project.id);
 
@@ -246,6 +275,46 @@ export function DashboardPage() {
       setActiveDuplicateId(null);
     }
   }
+
+  const insights = useMemo(() => {
+    const pipelineShare = projects.length === 0 ? 0 : Math.round((inReviewCount / projects.length) * 100);
+
+    return [
+      {
+        title: "Pipeline Momentum",
+        headline: `${inReviewCount} projects in review`,
+        detail:
+          inReviewCount === 0
+            ? "Move one draft to in review to keep delivery flow active."
+            : "Keep review cycles short to improve weekly completion volume.",
+        icon: TrendingUp,
+        accent: "from-primary/15 to-primary/0",
+        badgeLabel: pipelineShare >= 40 ? "Healthy" : "Watch"
+      },
+      {
+        title: "Delivery Throughput",
+        headline: `${completionRate}% completion rate`,
+        detail:
+          completionRate >= 60
+            ? "Completion velocity looks strong. Consider templating your top-performing projects."
+            : "Focus on closing in-review projects to raise throughput.",
+        icon: CheckCircle2,
+        accent: "from-emerald-500/15 to-emerald-500/0",
+        badgeLabel: completionRate >= 60 ? "Strong" : "Improvement"
+      },
+      {
+        title: "Draft Hygiene",
+        headline: `${draftWarningsCount} stale drafts`,
+        detail:
+          draftWarningsCount === 0
+            ? "Great hygiene. Your draft queue is clean."
+            : "Archive low-priority drafts or move active ones into review.",
+        icon: AlertTriangle,
+        accent: "from-amber-500/15 to-amber-500/0",
+        badgeLabel: draftWarningsCount === 0 ? "Clean" : "Action Needed"
+      }
+    ];
+  }, [completionRate, draftWarningsCount, inReviewCount, projects.length]);
 
   if (isAllProjectsView) {
     return (
@@ -311,14 +380,34 @@ export function DashboardPage() {
 
             {loading ? (
               <div className="space-y-3 p-6">
-                {Array.from({ length: 5 }).map((_, index) => (
-                  <Skeleton key={index} className="h-16 w-full" />
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="rounded-2xl border bg-background/60 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <Skeleton className="h-4 w-1/3" />
+                        <Skeleton className="h-3 w-2/5" />
+                      </div>
+                      <Skeleton className="h-8 w-20" />
+                      <Skeleton className="h-8 w-20" />
+                      <Skeleton className="h-8 w-20" />
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : null}
 
             {!loading && errorMessage ? (
-              <div className="p-6 text-sm text-destructive">{errorMessage}</div>
+              <div className="px-6 py-14 text-center">
+                <div className="mx-auto flex size-14 items-center justify-center rounded-2xl border bg-destructive/5">
+                  <AlertTriangle className="size-6 text-destructive" />
+                </div>
+                <h3 className="mt-4 text-lg font-semibold">Unable to load projects</h3>
+                <p className="mt-2 text-sm text-muted-foreground">{errorMessage}</p>
+                <Button className="mt-5" variant="outline" onClick={() => void loadProjects()}>
+                  <RefreshCw className="size-4" />
+                  Retry
+                </Button>
+              </div>
             ) : null}
 
             {!loading && !errorMessage && allProjects.length === 0 ? (
@@ -349,7 +438,7 @@ export function DashboardPage() {
                           {project.project_name}
                         </Link>
                         <p className="mt-1 truncate text-sm text-muted-foreground">
-                          {project.client_name} · {project.project_type || "Unspecified type"}
+                          {project.client_name} - {project.project_type || "Unspecified type"}
                         </p>
                       </div>
 
@@ -392,7 +481,7 @@ export function DashboardPage() {
                           {project.project_name}
                         </Link>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          {project.client_name} · {project.project_type || "Unspecified type"}
+                          {project.client_name} - {project.project_type || "Unspecified type"}
                         </p>
                       </div>
 
@@ -440,25 +529,51 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[1.75rem] border bg-card px-6 py-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-2.5">
-            <div className="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
+      <section className="relative overflow-hidden rounded-[1.75rem] border bg-card px-6 py-6 shadow-sm">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.16),transparent_58%)]" />
+        <div className="pointer-events-none absolute -left-20 top-10 h-56 w-56 rounded-full bg-primary/8 blur-3xl" />
+        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 rounded-full border bg-background/85 px-3 py-1 text-xs font-medium text-muted-foreground">
               <Sparkles className="size-3.5 text-primary" />
               Workspace Overview
             </div>
-            <h1 className="text-3xl font-semibold tracking-tight">Delivery Dashboard</h1>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Keep proposal work organized with a clear view of active projects, progress health, and latest activity.
-            </p>
+            <div className="space-y-2">
+              <h1 className="text-3xl font-semibold tracking-tight md:text-[2.15rem]">Delivery Dashboard</h1>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Stay on top of proposal momentum with a focused view of active pipeline, completion health, and priority work.
+              </p>
+            </div>
+            <div className="grid gap-2 pt-1 sm:grid-cols-3">
+              <div className="rounded-xl border bg-background/80 px-3 py-2.5">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Active</p>
+                <p className="mt-1 text-lg font-semibold tracking-tight">{projects.length}</p>
+              </div>
+              <div className="rounded-xl border bg-background/80 px-3 py-2.5">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">In Review</p>
+                <p className="mt-1 text-lg font-semibold tracking-tight">{inReviewCount}</p>
+              </div>
+              <div className="rounded-xl border bg-background/80 px-3 py-2.5">
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Completion</p>
+                <p className="mt-1 text-lg font-semibold tracking-tight">{completionRate}%</p>
+              </div>
+            </div>
           </div>
 
-          <Button variant="outline" asChild>
-            <Link to="/projects">
-              View All Projects
-              <ArrowUpRight className="size-4" />
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" asChild>
+              <Link to="/projects/new">
+                <PlusCircle className="size-4" />
+                New Project
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to="/projects">
+                View All Projects
+                <ArrowUpRight className="size-4" />
+              </Link>
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -469,6 +584,8 @@ export function DashboardPage() {
             label={metric.label}
             value={metric.value}
             description={metric.description}
+            meta={metric.meta}
+            progress={metric.progress}
             icon={metric.icon}
             tone={metric.tone}
           />
@@ -476,23 +593,26 @@ export function DashboardPage() {
       </section>
 
       <section className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className="border-border/70 shadow-sm">
+        <Card className="overflow-hidden border-border/70 shadow-sm">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <CardTitle className="text-xl">Recent Projects</CardTitle>
-                <CardDescription>Latest proposal work with quick access.</CardDescription>
+                <CardDescription>Latest proposal work with quick access and clear status visibility.</CardDescription>
               </div>
-              <Button variant="ghost" size="sm" asChild>
-                <Link to="/projects">
-                  See all
-                  <ArrowUpRight className="size-4" />
-                </Link>
-              </Button>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">{recentProjects.length} shown</Badge>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/projects">
+                    See all
+                    <ArrowUpRight className="size-4" />
+                  </Link>
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="hidden grid-cols-[minmax(0,1.3fr)_120px_120px_96px] items-center border-b px-6 py-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.35fr)_130px_130px_106px] items-center border-y bg-secondary/40 px-6 py-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground md:grid">
               <p>Project</p>
               <p>Status</p>
               <p>Updated</p>
@@ -501,14 +621,34 @@ export function DashboardPage() {
 
             {loading ? (
               <div className="space-y-3 p-6">
-                {Array.from({ length: 5 }).map((_, index) => (
-                  <Skeleton key={index} className="h-16 w-full" />
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="rounded-2xl border bg-background/60 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <Skeleton className="h-4 w-1/3" />
+                        <Skeleton className="h-3 w-2/5" />
+                      </div>
+                      <Skeleton className="h-8 w-20" />
+                      <Skeleton className="h-8 w-20" />
+                      <Skeleton className="h-8 w-20" />
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : null}
 
             {!loading && errorMessage ? (
-              <div className="p-6 text-sm text-destructive">{errorMessage}</div>
+              <div className="px-6 py-14 text-center">
+                <div className="mx-auto flex size-14 items-center justify-center rounded-2xl border bg-destructive/5">
+                  <AlertTriangle className="size-6 text-destructive" />
+                </div>
+                <h3 className="mt-4 text-lg font-semibold">Unable to load projects</h3>
+                <p className="mt-2 text-sm text-muted-foreground">{errorMessage}</p>
+                <Button className="mt-5" variant="outline" onClick={() => void loadProjects()}>
+                  <RefreshCw className="size-4" />
+                  Retry
+                </Button>
+              </div>
             ) : null}
 
             {!loading && !errorMessage && recentProjects.length === 0 ? (
@@ -518,22 +658,28 @@ export function DashboardPage() {
                 </div>
                 <h3 className="mt-4 text-lg font-semibold">No projects yet</h3>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Start your first proposal from the Add Project button in the topbar.
+                  Start your first proposal and it will appear here with status and activity tracking.
                 </p>
+                <Button variant="outline" className="mt-5" asChild>
+                  <Link to="/projects/new">
+                    <PlusCircle className="size-4" />
+                    Create Project
+                  </Link>
+                </Button>
               </div>
             ) : null}
 
             {!loading && !errorMessage && recentProjects.length > 0 ? (
               <div className="divide-y">
                 {recentProjects.map((project) => (
-                  <div key={project.id} className="px-6 py-4">
-                    <div className="hidden grid-cols-[minmax(0,1.3fr)_120px_120px_96px] items-center gap-3 md:grid">
+                  <div key={project.id} className="px-6 py-4 transition-colors hover:bg-secondary/20">
+                    <div className="hidden grid-cols-[minmax(0,1.35fr)_130px_130px_106px] items-center gap-3 md:grid">
                       <div className="min-w-0">
-                        <Link to={`/projects/${project.id}`} className="truncate font-semibold hover:text-primary">
+                        <Link to={`/projects/${project.id}`} className="truncate font-semibold transition-colors hover:text-primary">
                           {project.project_name}
                         </Link>
                         <p className="mt-1 truncate text-sm text-muted-foreground">
-                          {project.client_name} · {project.project_type || "Unspecified type"}
+                          {project.client_name} - {project.project_type || "Unspecified type"}
                         </p>
                       </div>
                       <Badge variant={getStatusVariant(project.status)}>{getStatusLabel(project.status)}</Badge>
@@ -554,7 +700,7 @@ export function DashboardPage() {
                           {project.project_name}
                         </Link>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          {project.client_name} · {project.project_type || "Unspecified type"}
+                          {project.client_name} - {project.project_type || "Unspecified type"}
                         </p>
                       </div>
                       <div className="flex items-center justify-between">
@@ -578,59 +724,111 @@ export function DashboardPage() {
         <div className="space-y-5">
           <Card className="border-border/70 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-lg">AI Insights</CardTitle>
-              <CardDescription>Actionable guidance based on current workspace state.</CardDescription>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-lg">AI Insights</CardTitle>
+                  <CardDescription>Prioritized signals based on current workspace health.</CardDescription>
+                </div>
+                <Badge variant="secondary" className="gap-1.5">
+                  <Bot className="size-3.5" />
+                  Live
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <div className="rounded-xl border bg-background/70 p-3">
-                <p className="font-medium">Completion rate: {completionRate}%</p>
-                <p className="mt-1 text-muted-foreground">
-                  Prioritize in-review projects to increase final delivery throughput this week.
-                </p>
-              </div>
-              <div className="rounded-xl border bg-background/70 p-3">
-                <p className="font-medium">{draftWarningsCount} stale drafts detected</p>
-                <p className="mt-1 text-muted-foreground">
-                  Revisit old drafts and either archive or push them into review to reduce pipeline drag.
-                </p>
-              </div>
-              <div className="rounded-xl border bg-background/70 p-3">
-                <p className="font-medium">Template opportunity</p>
-                <p className="mt-1 text-muted-foreground">
-                  Convert your strongest completed proposal into a reusable template for faster turnaround.
-                </p>
-              </div>
+              {insights.map((insight) => (
+                <div key={insight.title} className="relative overflow-hidden rounded-xl border bg-background/70 p-3.5">
+                  <div className={`pointer-events-none absolute inset-x-0 top-0 h-10 bg-gradient-to-b ${insight.accent}`} />
+                  <div className="relative flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{insight.title}</p>
+                      <p className="mt-1 text-sm font-semibold">{insight.headline}</p>
+                      <p className="mt-1.5 text-xs text-muted-foreground">{insight.detail}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <insight.icon className="size-4 text-primary" />
+                      <Badge variant="outline">{insight.badgeLabel}</Badge>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </CardContent>
           </Card>
 
           <Card className="border-border/70 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-lg">Recent Activity</CardTitle>
-              <CardDescription>Most recent project updates in your workspace.</CardDescription>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-lg">Recent Activity</CardTitle>
+                  <CardDescription>Latest project updates and delivery movement.</CardDescription>
+                </div>
+                <Badge variant="secondary" className="gap-1.5">
+                  <Activity className="size-3.5" />
+                  {recentActivity.length}
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              {recentActivity.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No activity yet.</p>
-              ) : (
-                recentActivity.map((project) => (
+              {loading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <div key={index} className="rounded-xl border p-3">
+                      <Skeleton className="h-3.5 w-2/3" />
+                      <Skeleton className="mt-2 h-3 w-1/2" />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {!loading && errorMessage ? (
+                <div className="rounded-xl border bg-destructive/5 p-3 text-sm">
+                  <p className="font-medium text-destructive">Activity unavailable</p>
+                  <p className="mt-1 text-muted-foreground">Try refreshing workspace data.</p>
+                  <Button className="mt-3" size="sm" variant="outline" onClick={() => void loadProjects()}>
+                    <RefreshCw className="size-4" />
+                    Retry
+                  </Button>
+                </div>
+              ) : null}
+
+              {!loading && !errorMessage && recentActivity.length === 0 ? (
+                <div className="rounded-xl border bg-background/70 p-4 text-sm text-muted-foreground">
+                  No activity yet. Once projects are created and updated, this stream will surface the latest actions.
+                </div>
+              ) : null}
+
+              {!loading && !errorMessage
+                ? recentActivity.map((project, index) => (
                   <Link
                     key={project.id}
                     to={`/projects/${project.id}`}
-                    className="flex items-start justify-between gap-3 rounded-xl border p-3 transition hover:bg-secondary/40"
+                    className="group block rounded-xl border p-3 transition-colors hover:bg-secondary/30"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{project.project_name}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {project.client_name} · {getStatusLabel(project.status)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Clock3 className="size-3.5" />
-                      {formatRelativeTime(project.updated_at)}
+                    <div className="flex items-start gap-3">
+                      <div className="relative flex h-full w-4 justify-center">
+                        <span className="mt-2 size-2 rounded-full bg-primary/80" />
+                        {index < recentActivity.length - 1 ? (
+                          <span className="absolute top-4 h-[calc(100%+10px)] w-px bg-border" />
+                        ) : null}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="truncate text-sm font-medium transition-colors group-hover:text-primary">
+                            {project.project_name}
+                          </p>
+                          <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                            <Clock3 className="size-3.5" />
+                            {formatRelativeTime(project.updated_at)}
+                          </div>
+                        </div>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {project.client_name} - {getStatusLabel(project.status)}
+                        </p>
+                      </div>
                     </div>
                   </Link>
                 ))
-              )}
+                : null}
             </CardContent>
           </Card>
         </div>
@@ -638,3 +836,4 @@ export function DashboardPage() {
     </div>
   );
 }
+
