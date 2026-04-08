@@ -21,6 +21,21 @@ def _env_csv(name: str) -> list[str]:
     return [value.strip() for value in os.getenv(name, "").split(",") if value.strip()]
 
 
+def _normalize_origin(value: str) -> str:
+    origin = value.strip().rstrip("/")
+    if not origin:
+        return ""
+    if origin.startswith("http://") or origin.startswith("https://"):
+        return origin
+    return f"https://{origin}"
+
+
+def _append_origin(origins: list[str], candidate: str) -> None:
+    normalized = _normalize_origin(candidate)
+    if normalized and normalized not in origins:
+        origins.append(normalized)
+
+
 IS_TEST = "test" in sys.argv
 DEFAULT_DEV_SECRET_KEY = "django-insecure-scopeflow-ai-dev-key"
 
@@ -149,6 +164,10 @@ if not _cors_allowed_origins and (DEBUG or IS_TEST):
         "http://127.0.0.1:3000",
         "http://localhost:3000",
     ]
+
+_append_origin(_cors_allowed_origins, os.getenv("FRONTEND_URL", ""))
+_append_origin(_cors_allowed_origins, os.getenv("VERCEL_URL", ""))
+_append_origin(_cors_allowed_origins, "https://scope-flow-ai.vercel.app")
 
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = _cors_allowed_origins
