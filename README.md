@@ -131,7 +131,6 @@ Reusable proposal templates with categories, included sections, and quick-use ac
 ### Activity
 Timeline view of proposal generation, exports, status changes, and template actions.
 
----
 
 ## Performance / Security Highlights
 
