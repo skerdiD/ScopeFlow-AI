@@ -16,39 +16,39 @@ https://scope-flow-ai.vercel.app/
 
 ### Landing Hero
 
-![ScopeFlow AI landing hero](./client/public/screenshoots/landing-hero.png)
+![ScopeFlow AI landing hero](./client/public/screenshots/landing-hero.png)
 
 ### Landing How It Works
 
-![ScopeFlow AI how it works section](./client/public/screenshoots/landing-how-it-works-section.png)
+![ScopeFlow AI how it works section](./client/public/screenshots/landing-how-it-works-section.png)
 
 ### Dashboard Overview
 
-![ScopeFlow AI dashboard overview](./client/public/screenshoots/dashboard-overview.png)
+![ScopeFlow AI dashboard overview](./client/public/screenshots/dashboard-overview.png)
 
 ### Dashboard Projects and Insights
 
-![ScopeFlow AI dashboard projects and insights](./client/public/screenshoots/dashboard-projects-and-insights.png)
+![ScopeFlow AI dashboard projects and insights](./client/public/screenshots/dashboard-projects-and-insights.png)
 
 ### Projects List
 
-![ScopeFlow AI projects list](./client/public/screenshoots/projects-list.png)
+![ScopeFlow AI projects list](./client/public/screenshots/projects-list.png)
 
 ### New Project Mobile Form
 
-![ScopeFlow AI new project mobile form](./client/public/screenshoots/new-project-form-mobile.png)
+![ScopeFlow AI new project mobile form](./client/public/screenshots/new-project-form-mobile.png)
 
 ### Templates Library
 
-![ScopeFlow AI templates library](./client/public/screenshoots/templates-library.png)
+![ScopeFlow AI templates library](./client/public/screenshots/templates-library.png)
 
 ### Create Template
 
-![ScopeFlow AI create template](./client/public/screenshoots/template-create.png)
+![ScopeFlow AI create template](./client/public/screenshots/template-create.png)
 
 ### Activity Timeline
 
-![ScopeFlow AI activity timeline](./client/public/screenshoots/activity-timeline.png)
+![ScopeFlow AI activity timeline](./client/public/screenshots/activity-timeline.png)
 
 ---
 
