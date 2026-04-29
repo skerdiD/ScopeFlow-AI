@@ -482,25 +482,6 @@ The strongest business value is not only the AI generation itself, but the workf
 
 ---
 
-## Future Improvements
-
-Possible improvements that could extend ScopeFlow AI into a larger proposal platform:
-
-* Team collaboration
-* Comments and approvals
-* Richer proposal analytics
-* Background jobs for heavy AI tasks
-* Notifications and reminders
-* More export formats
-* Client approval portal
-* Stripe billing for SaaS plans
-* Workspace/team roles
-* Proposal sharing links
-* AI-generated follow-up emails
-* Integration with CRM tools
-
----
-
 ## Folder Structure
 
 ```txt
