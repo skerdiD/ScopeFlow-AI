@@ -8,6 +8,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from .models import ProposalProject, ProposalVersion
+from .services import GeminiApiKeyMissingError
 
 
 class ProposalProjectApiTests(APITestCase):
@@ -485,3 +486,14 @@ class ProposalProjectApiTests(APITestCase):
 
                 self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
                 self.assertEqual(response.data["detail"], expected_message)
+
+    @patch("proposals.views.generate_structured_proposal")
+    def test_generate_endpoint_uses_safe_error_for_ai_configuration_failure(self, mock_generate_structured_proposal):
+        mock_generate_structured_proposal.side_effect = GeminiApiKeyMissingError("GEMINI_API_KEY is missing.")
+
+        self._authenticate(self.owner)
+        response = self.client.post(self.generate_url, self._generate_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data["detail"], "AI generation is temporarily unavailable.")
+        self.assertNotIn("GEMINI_API_KEY", response.data["detail"])

@@ -1,3 +1,5 @@
+import logging
+
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
 from django.db.models import Max
@@ -25,6 +27,8 @@ from .services.export_service import (
     generate_pdf_export,
 )
 
+
+logger = logging.getLogger(__name__)
 
 SECTION_FIELDS = ["summary", "scope", "deliverables", "milestones", "risks"]
 INTAKE_MAX_LENGTHS = {
@@ -62,6 +66,27 @@ LIST_QUERY_FIELDS = [
     "created_at",
     "updated_at",
 ]
+
+
+def gemini_error_response(exc: Exception, operation: str) -> Response:
+    logger.warning("%s failed with %s", operation, exc.__class__.__name__)
+
+    if isinstance(exc, GeminiQuotaExceededError):
+        return Response(
+            {"detail": "AI generation is temporarily unavailable due to usage limits."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    if isinstance(exc, (GeminiApiKeyMissingError, GeminiApiKeyLeakedError)):
+        return Response(
+            {"detail": "AI generation is temporarily unavailable."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    return Response(
+        {"detail": "AI generation failed. Please try again later."},
+        status=status.HTTP_502_BAD_GATEWAY,
+    )
 
 
 def get_request_user_id(request) -> str:
@@ -464,15 +489,15 @@ def generate_proposal(request):
     try:
         generated = generate_structured_proposal(intake)
     except GeminiApiKeyMissingError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return gemini_error_response(exc, "Proposal generation")
     except GeminiApiKeyLeakedError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return gemini_error_response(exc, "Proposal generation")
     except GeminiQuotaExceededError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        return gemini_error_response(exc, "Proposal generation")
     except GeminiApiRequestError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        return gemini_error_response(exc, "Proposal generation")
     except GeminiApiResponseError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        return gemini_error_response(exc, "Proposal generation")
 
     project_name = str(request.data.get("project_name", "")).strip() or f"{client_name} Proposal"
     if len(project_name) > INTAKE_MAX_LENGTHS["project_name"]:
@@ -553,15 +578,15 @@ def generate_template(request):
             existing_categories=existing_categories,
         )
     except GeminiApiKeyMissingError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return gemini_error_response(exc, "Template generation")
     except GeminiApiKeyLeakedError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return gemini_error_response(exc, "Template generation")
     except GeminiQuotaExceededError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        return gemini_error_response(exc, "Template generation")
     except GeminiApiRequestError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        return gemini_error_response(exc, "Template generation")
     except GeminiApiResponseError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        return gemini_error_response(exc, "Template generation")
 
     return Response(generated_template, status=status.HTTP_200_OK)
 

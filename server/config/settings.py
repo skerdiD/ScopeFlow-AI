@@ -21,6 +21,16 @@ def _env_csv(name: str) -> list[str]:
     return [value.strip() for value in os.getenv(name, "").split(",") if value.strip()]
 
 
+def _env_int(name: str, default: int) -> int:
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        return int(raw_value)
+    except ValueError as exc:
+        raise ImproperlyConfigured(f"{name} must be an integer.") from exc
+
+
 def _normalize_origin(value: str) -> str:
     origin = value.strip().rstrip("/")
     if not origin:
@@ -153,6 +163,8 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+DATA_UPLOAD_MAX_MEMORY_SIZE = _env_int("DATA_UPLOAD_MAX_MEMORY_SIZE", 1_048_576)
+FILE_UPLOAD_MAX_MEMORY_SIZE = _env_int("FILE_UPLOAD_MAX_MEMORY_SIZE", 1_048_576)
 
 _cors_allowed_origins = _env_csv("CORS_ALLOWED_ORIGINS")
 if not _cors_allowed_origins and (DEBUG or IS_TEST):

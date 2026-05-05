@@ -259,7 +259,7 @@ def _call_gemini_json_response(
     try:
         response = requests.post(url, json=request_body, timeout=75)
     except requests.RequestException as exc:
-        raise GeminiApiRequestError(f"Failed to call Gemini API: {str(exc)}") from exc
+        raise GeminiApiRequestError("Failed to call Gemini API.") from exc
 
     if not response.ok:
         api_message = ""
@@ -280,10 +280,7 @@ def _call_gemini_json_response(
                 "GEMINI_API_KEY has been blocked as leaked. Rotate it in Google AI Studio and update server/.env."
             )
 
-        details = api_message or response.text[:500]
-        raise GeminiApiRequestError(
-            f"Gemini API request failed with status {response.status_code}. {details}"
-        )
+        raise GeminiApiRequestError(f"Gemini API request failed with status {response.status_code}.")
 
     try:
         payload = response.json()
