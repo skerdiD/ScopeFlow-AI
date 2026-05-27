@@ -1,20 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Clock3, Download, FileText, RefreshCcw, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, Download, FileText, RefreshCcw, Save, Sparkles, Star, Trash2, WandSparkles } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectForm } from "@/components/project/project-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
   deleteProject,
   exportProjectDocument,
+  getEditSuggestions,
   getProject,
   markProjectFinal,
+  regenerateProposalSection,
+  reviewProposalQuality,
   restoreProjectVersion,
   updateProject,
+  type AIQualityReview,
+  type EditSuggestionsResponse,
   type ProposalProject,
   type ProposalProjectPayload,
   type ProposalVersion
@@ -22,7 +28,7 @@ import {
 import { logActivity } from "@/lib/activity";
 import { useAuth } from "@/hooks/use-auth";
 
-type ProposalSectionKey = "summary" | "scope" | "deliverables" | "milestones" | "risks";
+type ProposalSectionKey = "summary" | "scope" | "deliverables" | "milestones" | "proposal_timeline" | "pricing" | "risks" | "next_steps";
 type ProposalMilestone = { title: string; description: string };
 type ExportSource = "current" | "final" | "selected";
 
@@ -48,9 +54,24 @@ const editableSections: { key: ProposalSectionKey; title: string; placeholder: s
     placeholder: "Outline phases and milestones..."
   },
   {
+    key: "proposal_timeline",
+    title: "Timeline",
+    placeholder: "Clarify timing, phases, and review checkpoints..."
+  },
+  {
+    key: "pricing",
+    title: "Pricing",
+    placeholder: "Explain pricing, assumptions, and payment structure..."
+  },
+  {
     key: "risks",
     title: "Risks",
     placeholder: "Capture risks, assumptions, and scope creep..."
+  },
+  {
+    key: "next_steps",
+    title: "Next Steps",
+    placeholder: "Give the client clear next steps..."
   }
 ];
 
@@ -62,7 +83,10 @@ function buildSectionState(project: ProposalProject): SectionState {
     scope: project.scope || "",
     deliverables: project.deliverables || "",
     milestones: project.milestones || "",
-    risks: project.risks || ""
+    proposal_timeline: project.proposal_timeline || "",
+    pricing: project.pricing || "",
+    risks: project.risks || "",
+    next_steps: project.next_steps || ""
   };
 }
 
@@ -101,7 +125,10 @@ export function ProjectDetailsPage() {
     scope: "",
     deliverables: "",
     milestones: "",
-    risks: ""
+    proposal_timeline: "",
+    pricing: "",
+    risks: "",
+    next_steps: ""
   });
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
 
@@ -113,6 +140,12 @@ export function ProjectDetailsPage() {
   const [deleting, setDeleting] = useState(false);
   const [exportSource, setExportSource] = useState<ExportSource>("current");
   const [exportingFormat, setExportingFormat] = useState<"pdf" | "docx" | null>(null);
+  const [regeneratingSection, setRegeneratingSection] = useState<ProposalSectionKey | null>(null);
+  const [suggestingSection, setSuggestingSection] = useState<ProposalSectionKey | null>(null);
+  const [reviewingQuality, setReviewingQuality] = useState(false);
+  const [qualityReview, setQualityReview] = useState<AIQualityReview | null>(null);
+  const [editSuggestions, setEditSuggestions] = useState<Partial<Record<ProposalSectionKey, EditSuggestionsResponse>>>({});
+  const [regenerationInstructions, setRegenerationInstructions] = useState<Partial<Record<ProposalSectionKey, string>>>({});
 
   const [projectSaveState, setProjectSaveState] = useState("Idle");
   const [sectionSaveStates, setSectionSaveStates] = useState<Record<ProposalSectionKey, string>>({
@@ -120,7 +153,10 @@ export function ProjectDetailsPage() {
     scope: "Idle",
     deliverables: "Idle",
     milestones: "Idle",
-    risks: "Idle"
+    proposal_timeline: "Idle",
+    pricing: "Idle",
+    risks: "Idle",
+    next_steps: "Idle"
   });
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -165,24 +201,44 @@ export function ProjectDetailsPage() {
 
     return [
       {
+        key: "summary" as ProposalSectionKey,
         title: "Summary",
         value: project.summary
       },
       {
+        key: "scope" as ProposalSectionKey,
         title: "Scope",
         value: project.scope
       },
       {
+        key: "deliverables" as ProposalSectionKey,
         title: "Deliverables",
         value: project.deliverables
       },
       {
+        key: "milestones" as ProposalSectionKey,
         title: "Milestones",
         value: project.milestones
       },
       {
+        key: "proposal_timeline" as ProposalSectionKey,
+        title: "Timeline",
+        value: project.proposal_timeline
+      },
+      {
+        key: "pricing" as ProposalSectionKey,
+        title: "Pricing",
+        value: project.pricing
+      },
+      {
+        key: "risks" as ProposalSectionKey,
         title: "Risks",
         value: project.risks
+      },
+      {
+        key: "next_steps" as ProposalSectionKey,
+        title: "Next Steps",
+        value: project.next_steps
       }
     ];
   }, [project]);
@@ -219,7 +275,10 @@ export function ProjectDetailsPage() {
         scopeOfWork: [] as string[],
         deliverables: [] as string[],
         milestones: [] as ProposalMilestone[],
+        timeline: [] as string[],
+        pricing: [] as string[],
         risks: [] as string[],
+        nextSteps: [] as string[],
       };
     }
 
@@ -242,13 +301,19 @@ export function ProjectDetailsPage() {
       generated?.risks && generated.risks.length > 0
         ? generated.risks
         : parseTextList(project.risks);
+    const timeline = parseTextList(project.proposal_timeline);
+    const pricing = parseTextList(project.pricing);
+    const nextSteps = parseTextList(project.next_steps);
 
     return {
       summary,
       scopeOfWork,
       deliverables,
       milestones,
+      timeline,
+      pricing,
       risks,
+      nextSteps,
     };
   }, [project]);
 
@@ -292,7 +357,10 @@ export function ProjectDetailsPage() {
       scope: sectionDrafts.scope,
       deliverables: sectionDrafts.deliverables,
       milestones: sectionDrafts.milestones,
+      proposal_timeline: sectionDrafts.proposal_timeline,
+      pricing: sectionDrafts.pricing,
       risks: sectionDrafts.risks,
+      next_steps: sectionDrafts.next_steps,
       missing_information: project.missing_information ?? [],
       scope_risks: project.scope_risks ?? [],
       unclear_requirements: project.unclear_requirements ?? [],
@@ -407,6 +475,108 @@ export function ProjectDetailsPage() {
     }
   }
 
+  function toAiSection(section: ProposalSectionKey) {
+    if (section === "proposal_timeline") {
+      return "timeline";
+    }
+    if (section === "milestones" || section === "summary") {
+      return null;
+    }
+    return section;
+  }
+
+  async function handleRegenerateSection(section: ProposalSectionKey) {
+    if (!id || !project) {
+      return;
+    }
+    const aiSection = toAiSection(section);
+    if (!aiSection) {
+      toast.error("This section does not support AI regeneration yet.");
+      return;
+    }
+
+    try {
+      setRegeneratingSection(section);
+      const updated = await regenerateProposalSection(id, {
+        section: aiSection,
+        instructions: regenerationInstructions[section] ?? "",
+      });
+      setProject(updated);
+      setSectionDrafts(buildSectionState(updated));
+      setSectionSaveStates((current) => ({ ...current, [section]: "Regenerated as new version" }));
+      setErrorMessage("");
+      toast.success(`${section.replace("_", " ")} regenerated.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to regenerate section.";
+      setErrorMessage(message);
+      toast.error(message);
+    } finally {
+      setRegeneratingSection(null);
+    }
+  }
+
+  async function handleSuggestImprovements(section: ProposalSectionKey) {
+    if (!id) {
+      return;
+    }
+    const content = sectionDrafts[section].trim();
+    if (!content) {
+      toast.error("Add section content before asking for suggestions.");
+      return;
+    }
+    const suggestionSection = section === "proposal_timeline" ? "timeline" : section;
+    if (suggestionSection === "milestones") {
+      toast.error("Suggestions are available for client-facing text sections.");
+      return;
+    }
+
+    try {
+      setSuggestingSection(section);
+      const suggestions = await getEditSuggestions(id, {
+        section: suggestionSection,
+        content,
+      });
+      setEditSuggestions((current) => ({ ...current, [section]: suggestions }));
+      setErrorMessage("");
+      toast.success("Suggestions ready.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to get suggestions.";
+      setErrorMessage(message);
+      toast.error(message);
+    } finally {
+      setSuggestingSection(null);
+    }
+  }
+
+  function handleApplyImprovedExample(section: ProposalSectionKey) {
+    const improved = editSuggestions[section]?.improved_example?.trim();
+    if (!improved) {
+      return;
+    }
+    updateSectionDraft(section, improved);
+    toast.success("Improved example applied. Save when ready.");
+  }
+
+  async function handleQualityReview() {
+    if (!id) {
+      return;
+    }
+
+    try {
+      setReviewingQuality(true);
+      const review = await reviewProposalQuality(id);
+      setQualityReview(review);
+      setErrorMessage("");
+      toast.success("Quality review complete.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to review proposal.";
+      setErrorMessage(message);
+      toast.error(message);
+    } finally {
+      setReviewingQuality(false);
+    }
+  }
+
   async function handleSaveAllProposalSections() {
     if (!id || !project) {
       return;
@@ -423,7 +593,10 @@ export function ProjectDetailsPage() {
         scope: "Saved",
         deliverables: "Saved",
         milestones: "Saved",
-        risks: "Saved"
+        proposal_timeline: "Saved",
+        pricing: "Saved",
+        risks: "Saved",
+        next_steps: "Saved"
       });
       setErrorMessage("");
       logActivity({
@@ -696,6 +869,52 @@ export function ProjectDetailsPage() {
 
       {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
 
+      <Card className="border-border/70 shadow-sm">
+        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Star className="size-5 text-primary" />
+              AI Quality Score
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Review proposal clarity, specificity, scope control, and client readiness.
+            </p>
+          </div>
+          <Button variant="outline" onClick={handleQualityReview} disabled={reviewingQuality}>
+            <Sparkles className="size-4" />
+            {reviewingQuality ? "Reviewing..." : "Review with AI"}
+          </Button>
+        </CardHeader>
+        {qualityReview ? (
+          <CardContent className="grid gap-4 lg:grid-cols-[160px_minmax(0,1fr)]">
+            <div className="rounded-2xl border bg-background/70 p-4 text-center">
+              <p className="text-4xl font-semibold tracking-tight">{qualityReview.score}</p>
+              <p className="text-sm text-muted-foreground">out of 100</p>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">{qualityReview.summary}</p>
+              {[
+                ["Strengths", qualityReview.strengths],
+                ["Weaknesses", qualityReview.weaknesses],
+                ["Recommendations", qualityReview.recommendations],
+              ].map(([label, items]) => (
+                <div key={label as string}>
+                  <p className="text-sm font-semibold">{label as string}</p>
+                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                    {(items as string[]).map((item) => (
+                      <li key={item} className="flex gap-2">
+                        <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        ) : null}
+      </Card>
+
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader>
@@ -772,6 +991,26 @@ export function ProjectDetailsPage() {
 
         <Card>
           <CardHeader>
+            <CardTitle>Timeline</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {proposalContent.timeline.length > 0 ? (
+              <ul className="space-y-2">
+                {proposalContent.timeline.map((item, index) => (
+                  <li key={`timeline-${index}`} className="flex items-start gap-2 text-muted-foreground">
+                    <Clock3 className="mt-0.5 size-4 text-primary" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground">No timeline section generated yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>Risks</CardTitle>
           </CardHeader>
           <CardContent>
@@ -786,6 +1025,46 @@ export function ProjectDetailsPage() {
               </ul>
             ) : (
               <p className="text-muted-foreground">No risks generated yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Pricing</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {proposalContent.pricing.length > 0 ? (
+              <ul className="space-y-2">
+                {proposalContent.pricing.map((item, index) => (
+                  <li key={`pricing-${index}`} className="flex items-start gap-2 text-muted-foreground">
+                    <span className="mt-1 inline-block size-1.5 rounded-full bg-primary" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground">No pricing section generated yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Next Steps</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {proposalContent.nextSteps.length > 0 ? (
+              <ul className="space-y-2">
+                {proposalContent.nextSteps.map((item, index) => (
+                  <li key={`next-step-${index}`} className="flex items-start gap-2 text-muted-foreground">
+                    <CheckCircle2 className="mt-0.5 size-4 text-emerald-500" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground">No next steps generated yet.</p>
             )}
           </CardContent>
         </Card>
@@ -841,6 +1120,28 @@ export function ProjectDetailsPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
+                      {toAiSection(section.key) ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRegenerateSection(section.key)}
+                          disabled={regeneratingSection === section.key}
+                        >
+                          <WandSparkles className="size-4" />
+                          {regeneratingSection === section.key ? "Regenerating..." : "Regenerate"}
+                        </Button>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleSuggestImprovements(section.key)}
+                        disabled={suggestingSection === section.key}
+                      >
+                        <Sparkles className="size-4" />
+                        {suggestingSection === section.key ? "Reviewing..." : "Suggest"}
+                      </Button>
                       <Button
                         size="sm"
                         onClick={() => handleSaveSection(section.key)}
@@ -853,12 +1154,50 @@ export function ProjectDetailsPage() {
                   </div>
 
                   <div className="transition-all duration-200">
+                    {toAiSection(section.key) ? (
+                      <Input
+                        value={regenerationInstructions[section.key] ?? ""}
+                        onChange={(event) =>
+                          setRegenerationInstructions((current) => ({
+                            ...current,
+                            [section.key]: event.target.value,
+                          }))
+                        }
+                        placeholder={`Optional AI instructions for ${section.title.toLowerCase()}...`}
+                        className="mb-3"
+                      />
+                    ) : null}
                     <Textarea
                       value={sectionDrafts[section.key]}
                       onChange={(event) => updateSectionDraft(section.key, event.target.value)}
                       placeholder={section.placeholder}
                       className="min-h-[180px] resize-y"
                     />
+                    {editSuggestions[section.key] ? (
+                      <div className="mt-3 rounded-xl border bg-background/70 p-4 text-sm">
+                        <p className="font-semibold">Improvement suggestions</p>
+                        <p className="mt-1 text-muted-foreground">{editSuggestions[section.key]?.summary}</p>
+                        <ul className="mt-3 space-y-2 text-muted-foreground">
+                          {editSuggestions[section.key]?.suggestions.map((suggestion) => (
+                            <li key={`${suggestion.type}-${suggestion.message}`} className="flex gap-2">
+                              <Badge variant="outline">{suggestion.type}</Badge>
+                              <span>{suggestion.message}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {editSuggestions[section.key]?.improved_example ? (
+                          <div className="mt-3 space-y-2">
+                            <p className="font-medium">Improved example</p>
+                            <p className="whitespace-pre-wrap rounded-lg border bg-card p-3 text-muted-foreground">
+                              {editSuggestions[section.key]?.improved_example}
+                            </p>
+                            <Button type="button" variant="outline" size="sm" onClick={() => handleApplyImprovedExample(section.key)}>
+                              Apply Example
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -941,7 +1280,7 @@ export function ProjectDetailsPage() {
                   <div key={`${selectedVersion.id}-${section.title}`}>
                     <p className="font-medium">{section.title}</p>
                     <p className="mt-2 whitespace-pre-wrap text-muted-foreground">
-                      {selectedVersion[section.title.toLowerCase() as ProposalSectionKey] ||
+                      {selectedVersion[section.key] ||
                         `No ${section.title.toLowerCase()} saved in this version.`}
                     </p>
                   </div>

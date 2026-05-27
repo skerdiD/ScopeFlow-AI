@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import ProposalProject, ProposalVersion
+from .models import AIQualityReview, ProposalProject, ProposalVersion
 
 
 PROJECT_TEXT_MAX_LENGTHS = {
@@ -9,7 +9,10 @@ PROJECT_TEXT_MAX_LENGTHS = {
     "scope": 8000,
     "deliverables": 8000,
     "milestones": 8000,
+    "proposal_timeline": 8000,
+    "pricing": 8000,
     "risks": 8000,
+    "next_steps": 8000,
 }
 PROJECT_LIST_FIELDS = [
     "missing_information",
@@ -65,7 +68,10 @@ class ProposalVersionSerializer(serializers.ModelSerializer):
             "scope",
             "deliverables",
             "milestones",
+            "proposal_timeline",
+            "pricing",
             "risks",
+            "next_steps",
             "is_final",
             "created_at",
         ]
@@ -91,7 +97,10 @@ class ProposalProjectSerializer(serializers.ModelSerializer):
             "scope",
             "deliverables",
             "milestones",
+            "proposal_timeline",
+            "pricing",
             "risks",
+            "next_steps",
             "missing_information",
             "scope_risks",
             "unclear_requirements",
@@ -136,7 +145,10 @@ class ProposalProjectListSerializer(serializers.ModelSerializer):
             "scope",
             "deliverables",
             "milestones",
+            "proposal_timeline",
+            "pricing",
             "risks",
+            "next_steps",
             "missing_information",
             "scope_risks",
             "unclear_requirements",
@@ -154,3 +166,20 @@ class ProposalProjectListSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         return validate_project_payload(attrs)
+
+
+class AIQualityReviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AIQualityReview
+        fields = [
+            "id",
+            "project",
+            "proposal_version",
+            "score",
+            "summary",
+            "strengths",
+            "weaknesses",
+            "recommendations",
+            "created_at",
+        ]
+        read_only_fields = fields

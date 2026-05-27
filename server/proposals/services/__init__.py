@@ -4,9 +4,14 @@ from .gemini_service import (
     GeminiApiRequestError,
     GeminiApiResponseError,
     GeminiQuotaExceededError,
+    GeminiJsonResult,
     generate_template_draft,
+    generate_edit_suggestions,
+    generate_quality_review,
+    generate_section_regeneration,
     GeminiServiceError,
     generate_structured_proposal,
+    get_active_prompt_version,
 )
 
 __all__ = [
@@ -15,7 +20,12 @@ __all__ = [
     "GeminiApiRequestError",
     "GeminiApiResponseError",
     "GeminiQuotaExceededError",
+    "GeminiJsonResult",
     "GeminiServiceError",
+    "generate_edit_suggestions",
+    "generate_quality_review",
+    "generate_section_regeneration",
     "generate_template_draft",
     "generate_structured_proposal",
+    "get_active_prompt_version",
 ]

@@ -26,7 +26,10 @@ const emptyValues = {
   scope: "",
   deliverables: "",
   milestones: "",
+  proposal_timeline: "",
+  pricing: "",
   risks: "",
+  next_steps: "",
   status: "draft"
 };
 
@@ -71,7 +74,10 @@ export function ProjectForm({
       scope: formValues.scope,
       deliverables: formValues.deliverables,
       milestones: formValues.milestones,
+      proposal_timeline: formValues.proposal_timeline,
+      pricing: formValues.pricing,
       risks: formValues.risks,
+      next_steps: formValues.next_steps,
       missing_information: initialValues?.missing_information ?? [],
       scope_risks: initialValues?.scope_risks ?? [],
       unclear_requirements: initialValues?.unclear_requirements ?? [],
@@ -102,7 +108,10 @@ export function ProjectForm({
       scope: formValues.scope,
       deliverables: formValues.deliverables,
       milestones: formValues.milestones,
+      proposal_timeline: formValues.proposal_timeline,
+      pricing: formValues.pricing,
       risks: formValues.risks,
+      next_steps: formValues.next_steps,
       missing_information: initialValues?.missing_information ?? [],
       scope_risks: initialValues?.scope_risks ?? [],
       unclear_requirements: initialValues?.unclear_requirements ?? [],

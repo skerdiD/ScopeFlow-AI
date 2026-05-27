@@ -1,5 +1,6 @@
 import json
 import os
+from dataclasses import dataclass
 from typing import Any
 
 import requests
@@ -7,6 +8,12 @@ import requests
 
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+@dataclass(frozen=True)
+class GeminiJsonResult:
+    data: dict[str, Any]
+    token_usage: dict[str, int | None]
 
 
 class GeminiServiceError(Exception):
@@ -234,7 +241,8 @@ def _call_gemini_json_response(
     *,
     temperature: float,
     max_output_tokens: int,
-) -> dict[str, Any]:
+    include_usage: bool = False,
+) -> dict[str, Any] | GeminiJsonResult:
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
         raise GeminiApiKeyMissingError("GEMINI_API_KEY is missing.")
@@ -302,7 +310,17 @@ def _call_gemini_json_response(
     if not response_text:
         raise GeminiApiResponseError("Gemini returned an empty response.")
 
-    return _clean_json_text(response_text)
+    parsed = _clean_json_text(response_text)
+    if not include_usage:
+        return parsed
+
+    usage_metadata = payload.get("usageMetadata", {})
+    token_usage = {
+        "input_tokens": usage_metadata.get("promptTokenCount"),
+        "output_tokens": usage_metadata.get("candidatesTokenCount"),
+        "total_tokens": usage_metadata.get("totalTokenCount"),
+    }
+    return GeminiJsonResult(data=parsed, token_usage=token_usage)
 
 
 def _truncate_words(text: str, max_words: int) -> str:
@@ -1270,13 +1288,167 @@ def normalize_generated_proposal(data: dict[str, Any], intake: dict[str, str] | 
     }
 
 
-def generate_structured_proposal(intake: dict[str, str]) -> dict[str, Any]:
-    prompt = _build_prompt(intake)
+def get_active_prompt_version(purpose: str):
+    from proposals.models import AIPromptVersion
+
+    return AIPromptVersion.objects.filter(purpose=purpose, is_active=True).order_by("-updated_at").first()
+
+
+def _render_prompt_template(prompt_text: str, context: dict[str, Any]) -> str:
+    rendered = prompt_text
+    for key, value in context.items():
+        rendered = rendered.replace("{" + key + "}", str(value))
+    return rendered
+
+
+def generate_structured_proposal(
+    intake: dict[str, str],
+    *,
+    prompt_version=None,
+    include_usage: bool = False,
+) -> dict[str, Any] | GeminiJsonResult:
+    if prompt_version:
+        prompt = _render_prompt_template(
+            prompt_version.prompt_text,
+            {
+                **intake,
+                "intake_json": json.dumps(intake),
+            },
+        )
+    else:
+        prompt = _build_prompt(intake)
     try:
-        parsed = _call_gemini_json_response(prompt, temperature=0.2, max_output_tokens=900)
-        return normalize_generated_proposal(parsed, intake=intake)
+        result = _call_gemini_json_response(prompt, temperature=0.2, max_output_tokens=900, include_usage=include_usage)
+        if isinstance(result, GeminiJsonResult):
+            return GeminiJsonResult(data=normalize_generated_proposal(result.data, intake=intake), token_usage=result.token_usage)
+        return normalize_generated_proposal(result, intake=intake)
     except GeminiApiResponseError:
-        return _fallback_generated_proposal(intake)
+        fallback = _fallback_generated_proposal(intake)
+        if include_usage:
+            return GeminiJsonResult(data=fallback, token_usage={})
+        return fallback
+
+
+SECTION_REGENERATION_FALLBACK_PROMPT = """
+You are improving one section of a client proposal.
+Return valid JSON only with this shape: {"content": "string"}.
+Rewrite only the requested section using concise, professional, client-facing language.
+
+Section: {section}
+Custom instructions: {instructions}
+Project context JSON:
+{project_json}
+""".strip()
+
+
+QUALITY_REVIEW_FALLBACK_PROMPT = """
+You are a senior proposal reviewer.
+Return valid JSON only with this shape:
+{"score": 82, "summary": "string", "strengths": ["string"], "weaknesses": ["string"], "recommendations": ["string"]}.
+Score from 0 to 100 based on clarity, specificity, scope control, commercial confidence, and client readiness.
+
+Proposal JSON:
+{project_json}
+""".strip()
+
+
+EDIT_SUGGESTIONS_FALLBACK_PROMPT = """
+You are a senior editor reviewing a user-edited proposal section.
+Return valid JSON only with this shape:
+{"summary": "string", "suggestions": [{"type": "clarity", "message": "string"}], "improved_example": "string"}.
+Do not be generic. Suggest practical improvements without changing the user's intent.
+
+Section: {section}
+Content:
+{content}
+""".strip()
+
+
+def _prompt_for_purpose(purpose: str, fallback: str):
+    prompt_version = get_active_prompt_version(purpose)
+    return prompt_version, prompt_version.prompt_text if prompt_version else fallback
+
+
+def generate_section_regeneration(
+    *,
+    project_context: dict[str, Any],
+    section: str,
+    instructions: str = "",
+) -> tuple[str, object | None, dict]:
+    from proposals.models import AIPromptVersion
+
+    prompt_version, prompt_text = _prompt_for_purpose(
+        AIPromptVersion.PURPOSE_SECTION_REGENERATION,
+        SECTION_REGENERATION_FALLBACK_PROMPT,
+    )
+    prompt = _render_prompt_template(
+        prompt_text,
+        {
+            "section": section,
+            "instructions": instructions or "Improve clarity and client readiness.",
+            "project_json": json.dumps(project_context),
+        },
+    )
+    result = _call_gemini_json_response(prompt, temperature=0.25, max_output_tokens=700, include_usage=True)
+    if not isinstance(result, GeminiJsonResult):
+        raise GeminiApiResponseError("Gemini returned invalid section regeneration metadata.")
+
+    content = str(result.data.get("content", "")).strip()
+    if not content:
+        raise GeminiApiResponseError("Gemini returned an empty regenerated section.")
+
+    return content, prompt_version, result.token_usage
+
+
+def generate_quality_review(*, project_context: dict[str, Any]) -> tuple[dict[str, Any], object | None, dict]:
+    from proposals.models import AIPromptVersion
+
+    prompt_version, prompt_text = _prompt_for_purpose(AIPromptVersion.PURPOSE_QUALITY_REVIEW, QUALITY_REVIEW_FALLBACK_PROMPT)
+    prompt = _render_prompt_template(prompt_text, {"project_json": json.dumps(project_context)})
+    result = _call_gemini_json_response(prompt, temperature=0.2, max_output_tokens=900, include_usage=True)
+    if not isinstance(result, GeminiJsonResult):
+        raise GeminiApiResponseError("Gemini returned invalid quality review metadata.")
+
+    score = int(result.data.get("score", 0))
+    review = {
+        "score": max(0, min(100, score)),
+        "summary": _truncate_words(str(result.data.get("summary", "")).strip(), 45),
+        "strengths": _normalize_string_list(result.data.get("strengths", []), max_words=18)[:6],
+        "weaknesses": _normalize_string_list(result.data.get("weaknesses", []), max_words=18)[:6],
+        "recommendations": _normalize_string_list(result.data.get("recommendations", []), max_words=18)[:6],
+    }
+    if not review["summary"]:
+        raise GeminiApiResponseError("Gemini returned an empty quality review summary.")
+    return review, prompt_version, result.token_usage
+
+
+def generate_edit_suggestions(*, section: str, content: str) -> tuple[dict[str, Any], object | None, dict]:
+    from proposals.models import AIPromptVersion
+
+    prompt_version, prompt_text = _prompt_for_purpose(AIPromptVersion.PURPOSE_EDIT_SUGGESTIONS, EDIT_SUGGESTIONS_FALLBACK_PROMPT)
+    prompt = _render_prompt_template(prompt_text, {"section": section, "content": content})
+    result = _call_gemini_json_response(prompt, temperature=0.25, max_output_tokens=800, include_usage=True)
+    if not isinstance(result, GeminiJsonResult):
+        raise GeminiApiResponseError("Gemini returned invalid edit suggestion metadata.")
+
+    raw_suggestions = result.data.get("suggestions", [])
+    suggestions = []
+    if isinstance(raw_suggestions, list):
+        for item in raw_suggestions[:6]:
+            if not isinstance(item, dict):
+                continue
+            message = str(item.get("message", "")).strip()
+            if message:
+                suggestions.append({"type": str(item.get("type", "clarity")).strip() or "clarity", "message": message})
+
+    output = {
+        "summary": _truncate_words(str(result.data.get("summary", "")).strip(), 35),
+        "suggestions": suggestions,
+        "improved_example": str(result.data.get("improved_example", "")).strip(),
+    }
+    if not output["summary"] or not output["suggestions"]:
+        raise GeminiApiResponseError("Gemini returned incomplete edit suggestions.")
+    return output, prompt_version, result.token_usage
 
 
 def generate_template_draft(user_prompt: str, existing_categories: list[str] | None = None) -> dict[str, Any]:

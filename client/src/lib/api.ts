@@ -45,7 +45,10 @@ export type ProposalVersion = {
   scope: string;
   deliverables: string;
   milestones: string;
+  proposal_timeline: string;
+  pricing: string;
   risks: string;
+  next_steps: string;
   is_final: boolean;
   created_at: string;
 };
@@ -63,7 +66,10 @@ export type ProposalProject = {
   scope: string;
   deliverables: string;
   milestones: string;
+  proposal_timeline: string;
+  pricing: string;
   risks: string;
+  next_steps: string;
   missing_information: string[];
   scope_risks: string[];
   unclear_requirements: string[];
@@ -93,7 +99,10 @@ export type ProposalProjectPayload = {
   scope: string;
   deliverables: string;
   milestones: string;
+  proposal_timeline: string;
+  pricing: string;
   risks: string;
+  next_steps: string;
   missing_information: string[];
   scope_risks: string[];
   unclear_requirements: string[];
@@ -117,6 +126,31 @@ export type GenerateProposalPayload = {
 export type GenerateTemplatePayload = {
   user_prompt: string;
   existing_categories?: string[];
+};
+
+export type AIProposalSection = "summary" | "scope" | "deliverables" | "timeline" | "pricing" | "risks" | "next_steps";
+
+export type AIQualityReview = {
+  id: number;
+  project: number;
+  proposal_version: number | null;
+  score: number;
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: string[];
+  created_at: string;
+};
+
+export type EditSuggestion = {
+  type: string;
+  message: string;
+};
+
+export type EditSuggestionsResponse = {
+  summary: string;
+  suggestions: EditSuggestion[];
+  improved_example: string;
 };
 
 export type PlanName = "free" | "pro" | "business";
@@ -277,6 +311,45 @@ export async function restoreProjectVersion(
   });
 
   return handleResponse<ProposalProject>(response);
+}
+
+export async function regenerateProposalSection(
+  projectId: string,
+  payload: { section: Exclude<AIProposalSection, "summary">; instructions?: string }
+): Promise<ProposalProject> {
+  const headers = await createAuthHeaders(true);
+  const response = await fetch(`${getApiBaseUrl()}/proposals/${projectId}/regenerate-section/`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload)
+  });
+
+  return handleResponse<ProposalProject>(response);
+}
+
+export async function reviewProposalQuality(projectId: string): Promise<AIQualityReview> {
+  const headers = await createAuthHeaders(true);
+  const response = await fetch(`${getApiBaseUrl()}/proposals/${projectId}/quality-review/`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+
+  return handleResponse<AIQualityReview>(response);
+}
+
+export async function getEditSuggestions(
+  projectId: string,
+  payload: { section: AIProposalSection; content: string }
+): Promise<EditSuggestionsResponse> {
+  const headers = await createAuthHeaders(true);
+  const response = await fetch(`${getApiBaseUrl()}/proposals/${projectId}/edit-suggestions/`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload)
+  });
+
+  return handleResponse<EditSuggestionsResponse>(response);
 }
 
 function parseDownloadFilename(contentDisposition: string | null, fallback: string): string {

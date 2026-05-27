@@ -7,7 +7,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import ProposalProject, ProposalVersion, UsageRecord, UserPlan
+from .models import AIQualityReview, AIUsageLog, ProposalProject, ProposalVersion, UsageRecord, UserPlan
 from .services.usage_service import AIUsageService
 from .services import GeminiApiKeyMissingError
 
@@ -578,3 +578,128 @@ class ProposalProjectApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data["detail"], "AI generation is temporarily unavailable.")
         self.assertNotIn("GEMINI_API_KEY", response.data["detail"])
+
+    @patch("proposals.views.generate_section_regeneration")
+    def test_regenerate_section_updates_only_requested_section(self, mock_regenerate):
+        project = ProposalProject.objects.create(
+            user_id=self.owner.username,
+            **self._project_payload(scope="- Old scope", risks="- Existing risk"),
+        )
+        mock_regenerate.return_value = ("- New scoped workstream", None, {"total_tokens": 42})
+
+        self._authenticate(self.owner)
+        response = self.client.post(
+            f"/api/proposals/{project.id}/regenerate-section/",
+            {"section": "scope", "instructions": "Make it clearer."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        project.refresh_from_db()
+        self.assertEqual(project.scope, "- New scoped workstream")
+        self.assertEqual(project.risks, "- Existing risk")
+        self.assertEqual(project.versions.count(), 1)
+        self.assertEqual(project.versions.first().changed_sections, ["scope"])
+        self.assertTrue(
+            AIUsageLog.objects.filter(
+                user=self.owner,
+                project=project,
+                action_type=AIUsageLog.ACTION_SECTION_REGENERATION,
+                status=AIUsageLog.STATUS_SUCCESS,
+            ).exists()
+        )
+
+    def test_regenerate_section_rejects_invalid_section(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.owner)
+        response = self.client.post(
+            f"/api/proposals/{project.id}/regenerate-section/",
+            {"section": "summary"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("proposals.views.generate_quality_review")
+    def test_quality_review_returns_and_stores_score(self, mock_quality_review):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+        mock_quality_review.return_value = (
+            {
+                "score": 82,
+                "summary": "Strong proposal with room to clarify pricing.",
+                "strengths": ["Clear scope"],
+                "weaknesses": ["Pricing is vague"],
+                "recommendations": ["Clarify pricing"],
+            },
+            None,
+            {"total_tokens": 55},
+        )
+
+        self._authenticate(self.owner)
+        response = self.client.post(f"/api/proposals/{project.id}/quality-review/", {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["score"], 82)
+        self.assertEqual(AIQualityReview.objects.filter(project=project, score=82).count(), 1)
+        self.assertTrue(
+            AIUsageLog.objects.filter(
+                user=self.owner,
+                project=project,
+                action_type=AIUsageLog.ACTION_QUALITY_SCORE,
+                status=AIUsageLog.STATUS_SUCCESS,
+            ).exists()
+        )
+
+    def test_edit_suggestions_requires_valid_content(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.owner)
+        response = self.client.post(
+            f"/api/proposals/{project.id}/edit-suggestions/",
+            {"section": "scope", "content": ""},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["detail"], "content is required.")
+
+    @patch("proposals.views.generate_edit_suggestions")
+    def test_edit_suggestions_returns_without_overwriting_content(self, mock_suggestions):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload(scope="Original scope"))
+        mock_suggestions.return_value = (
+            {
+                "summary": "Readable but can be more specific.",
+                "suggestions": [{"type": "clarity", "message": "Add measurable deliverables."}],
+                "improved_example": "Improved scope example.",
+            },
+            None,
+            {},
+        )
+
+        self._authenticate(self.owner)
+        response = self.client.post(
+            f"/api/proposals/{project.id}/edit-suggestions/",
+            {"section": "scope", "content": "Original scope"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        project.refresh_from_db()
+        self.assertEqual(project.scope, "Original scope")
+        self.assertEqual(response.data["suggestions"][0]["type"], "clarity")
+
+    def test_ai_endpoints_require_authentication(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        response = self.client.post(f"/api/proposals/{project.id}/quality-review/", {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_ai_endpoints_deny_wrong_user(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.other_user)
+        response = self.client.post(f"/api/proposals/{project.id}/quality-review/", {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

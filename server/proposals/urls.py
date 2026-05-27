@@ -11,5 +11,17 @@ urlpatterns = [
     path("generate/", generate_proposal),
     path("generate-template/", generate_template),
     path("usage/", usage_status),
+    path(
+        "proposals/<int:pk>/regenerate-section/",
+        ProposalProjectViewSet.as_view({"post": "regenerate_section"}),
+    ),
+    path(
+        "proposals/<int:pk>/quality-review/",
+        ProposalProjectViewSet.as_view({"post": "quality_review"}),
+    ),
+    path(
+        "proposals/<int:pk>/edit-suggestions/",
+        ProposalProjectViewSet.as_view({"post": "edit_suggestions"}),
+    ),
     path("", include(router.urls)),
 ]

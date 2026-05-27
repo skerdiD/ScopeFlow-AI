@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 
-from proposals.models import UsageRecord, UserPlan
+from proposals.models import AIUsageLog, UsageRecord, UserPlan
 
 
 PLAN_LIMITS = {
@@ -92,6 +92,32 @@ class AIUsageService:
         usage.ai_generations_used += 1
         usage.save(update_fields=["ai_generations_used", "updated_at"])
         return AIUsageService.get_current_usage(user)
+
+    @staticmethod
+    def log_action(
+        *,
+        user,
+        action_type: str,
+        status: str,
+        project=None,
+        prompt_version=None,
+        error_message: str = "",
+        token_usage: dict | None = None,
+    ) -> AIUsageLog:
+        token_usage = token_usage or {}
+        return AIUsageLog.objects.create(
+            user=user,
+            project=project,
+            action_type=action_type,
+            status=status,
+            prompt_version=prompt_version,
+            error_message=error_message[:2000],
+            input_tokens=token_usage.get("input_tokens"),
+            output_tokens=token_usage.get("output_tokens"),
+            total_tokens=token_usage.get("total_tokens"),
+            # TODO: Connect provider-specific pricing once Gemini model billing rates are configured.
+            estimated_cost=None,
+        )
 
 
 def set_user_plan(username: str, plan: str) -> UserPlan:

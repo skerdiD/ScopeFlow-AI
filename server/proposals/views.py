@@ -8,8 +8,8 @@ from rest_framework.decorators import action, api_view, permission_classes, thro
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from .models import ProposalProject, ProposalVersion
-from .serializers import ProposalProjectListSerializer, ProposalProjectSerializer
+from .models import AIQualityReview, AIUsageLog, AIPromptVersion, ProposalProject, ProposalVersion
+from .serializers import AIQualityReviewSerializer, ProposalProjectListSerializer, ProposalProjectSerializer
 from .throttling import GenerateProposalRateThrottle, GenerateTemplateRateThrottle
 from .services import (
     GeminiApiKeyLeakedError,
@@ -17,8 +17,13 @@ from .services import (
     GeminiApiRequestError,
     GeminiApiResponseError,
     GeminiQuotaExceededError,
+    GeminiJsonResult,
+    generate_edit_suggestions,
+    generate_quality_review,
+    generate_section_regeneration,
     generate_template_draft,
     generate_structured_proposal,
+    get_active_prompt_version,
 )
 from .services.export_service import (
     build_export_filename,
@@ -31,7 +36,16 @@ from .services.usage_service import AIUsageService
 
 logger = logging.getLogger(__name__)
 
-SECTION_FIELDS = ["summary", "scope", "deliverables", "milestones", "risks"]
+SECTION_FIELDS = ["summary", "scope", "deliverables", "milestones", "proposal_timeline", "pricing", "risks", "next_steps"]
+AI_SECTION_FIELDS = {"scope", "deliverables", "timeline", "pricing", "risks", "next_steps"}
+AI_SECTION_TO_MODEL_FIELD = {
+    "scope": "scope",
+    "deliverables": "deliverables",
+    "timeline": "proposal_timeline",
+    "pricing": "pricing",
+    "risks": "risks",
+    "next_steps": "next_steps",
+}
 INTAKE_MAX_LENGTHS = {
     "client_name": 255,
     "business_type": 120,
@@ -58,7 +72,10 @@ LIST_QUERY_FIELDS = [
     "scope",
     "deliverables",
     "milestones",
+    "proposal_timeline",
+    "pricing",
     "risks",
+    "next_steps",
     "missing_information",
     "scope_risks",
     "unclear_requirements",
@@ -137,7 +154,10 @@ def create_project_version(
         scope=project.scope,
         deliverables=project.deliverables,
         milestones=project.milestones,
+        proposal_timeline=project.proposal_timeline,
+        pricing=project.pricing,
         risks=project.risks,
+        next_steps=project.next_steps,
         is_final=is_final,
     )
 
@@ -198,13 +218,35 @@ def build_generated_proposal_snapshot(project: ProposalProject) -> dict:
         "scope_of_work": normalize_string_list(project.scope),
         "deliverables": normalize_string_list(project.deliverables),
         "milestones": parse_milestone_list(project.milestones),
+        "timeline": normalize_string_list(project.proposal_timeline),
+        "pricing": normalize_string_list(project.pricing),
         "risks": normalize_string_list(project.risks),
+        "next_steps": normalize_string_list(project.next_steps),
     }
 
 
 def save_generated_proposal_snapshot(project: ProposalProject):
     project.generated_proposal = build_generated_proposal_snapshot(project)
     project.save(update_fields=["generated_proposal", "updated_at"])
+
+
+def build_ai_project_context(project: ProposalProject) -> dict:
+    return {
+        "client_name": project.client_name,
+        "project_name": project.project_name,
+        "project_type": project.project_type,
+        "budget": project.budget,
+        "timeline": project.timeline,
+        "requirements": project.requirements,
+        "summary": project.summary,
+        "scope": project.scope,
+        "deliverables": project.deliverables,
+        "milestones": project.milestones,
+        "proposal_timeline": project.proposal_timeline,
+        "pricing": project.pricing,
+        "risks": project.risks,
+        "next_steps": project.next_steps,
+    }
 
 
 def apply_generated_proposal_to_project(project: ProposalProject, generated: dict):
@@ -214,7 +256,10 @@ def apply_generated_proposal_to_project(project: ProposalProject, generated: dic
     project.milestones = "\n".join(
         [f"{milestone['title']}: {milestone['description']}" for milestone in generated.get("milestones", [])]
     )
+    project.proposal_timeline = "\n".join([f"- {item}" for item in generated.get("timeline", [])])
+    project.pricing = "\n".join([f"- {item}" for item in generated.get("pricing", [])])
     project.risks = "\n".join([f"- {item}" for item in generated.get("risks", [])])
+    project.next_steps = "\n".join([f"- {item}" for item in generated.get("next_steps", [])])
     project.generated_proposal = generated
 
 
@@ -230,7 +275,10 @@ def apply_request_fields_to_project(project: ProposalProject, payload: dict) -> 
         "scope",
         "deliverables",
         "milestones",
+        "proposal_timeline",
+        "pricing",
         "risks",
+        "next_steps",
         "status",
     ]
 
@@ -318,7 +366,10 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
         project.scope = version.scope
         project.deliverables = version.deliverables
         project.milestones = version.milestones
+        project.proposal_timeline = version.proposal_timeline
+        project.pricing = version.pricing
         project.risks = version.risks
+        project.next_steps = version.next_steps
         project.current_version = version
         project.save()
         save_generated_proposal_snapshot(project)
@@ -341,6 +392,119 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
         save_generated_proposal_snapshot(project)
 
         return Response(ProposalProjectSerializer(project).data)
+
+    @action(detail=True, methods=["POST"], url_path="regenerate-section")
+    def regenerate_section(self, request, pk=None):
+        project = self.get_object()
+        section = str(request.data.get("section", "")).strip().lower()
+        instructions = str(request.data.get("instructions", "")).strip()
+
+        if section not in AI_SECTION_FIELDS:
+            return Response(
+                {"detail": "section must be one of: scope, deliverables, timeline, pricing, risks, next_steps."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        model_field = AI_SECTION_TO_MODEL_FIELD[section]
+        context = build_ai_project_context(project)
+
+        try:
+            content, prompt_version, token_usage = generate_section_regeneration(
+                project_context=context,
+                section=section,
+                instructions=instructions,
+            )
+        except (GeminiApiKeyMissingError, GeminiApiKeyLeakedError, GeminiQuotaExceededError, GeminiApiRequestError, GeminiApiResponseError) as exc:
+            AIUsageService.log_action(
+                user=request.user,
+                project=project,
+                action_type=AIUsageLog.ACTION_SECTION_REGENERATION,
+                status=AIUsageLog.STATUS_FAILURE,
+                error_message=str(exc),
+            )
+            return gemini_error_response(exc, "Section regeneration")
+
+        setattr(project, model_field, content)
+        project.status = "in_review"
+        project.save(update_fields=[model_field, "status", "updated_at"])
+        save_generated_proposal_snapshot(project)
+        create_project_version(project, source="regenerate", changed_sections=[model_field])
+        AIUsageService.log_action(
+            user=request.user,
+            project=project,
+            action_type=AIUsageLog.ACTION_SECTION_REGENERATION,
+            status=AIUsageLog.STATUS_SUCCESS,
+            prompt_version=prompt_version,
+            token_usage=token_usage,
+        )
+
+        return Response(ProposalProjectSerializer(project).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["POST"], url_path="quality-review")
+    def quality_review(self, request, pk=None):
+        project = self.get_object()
+
+        try:
+            review_data, prompt_version, token_usage = generate_quality_review(project_context=build_ai_project_context(project))
+        except (GeminiApiKeyMissingError, GeminiApiKeyLeakedError, GeminiQuotaExceededError, GeminiApiRequestError, GeminiApiResponseError) as exc:
+            AIUsageService.log_action(
+                user=request.user,
+                project=project,
+                action_type=AIUsageLog.ACTION_QUALITY_SCORE,
+                status=AIUsageLog.STATUS_FAILURE,
+                error_message=str(exc),
+            )
+            return gemini_error_response(exc, "Quality review")
+
+        review = AIQualityReview.objects.create(
+            project=project,
+            user=request.user,
+            proposal_version=project.current_version,
+            prompt_version=prompt_version,
+            **review_data,
+        )
+        AIUsageService.log_action(
+            user=request.user,
+            project=project,
+            action_type=AIUsageLog.ACTION_QUALITY_SCORE,
+            status=AIUsageLog.STATUS_SUCCESS,
+            prompt_version=prompt_version,
+            token_usage=token_usage,
+        )
+        return Response(AIQualityReviewSerializer(review).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["POST"], url_path="edit-suggestions")
+    def edit_suggestions(self, request, pk=None):
+        project = self.get_object()
+        section = str(request.data.get("section", "")).strip().lower()
+        content = str(request.data.get("content", "")).strip()
+
+        if section not in AI_SECTION_FIELDS and section != "summary":
+            return Response({"detail": "section is invalid."}, status=status.HTTP_400_BAD_REQUEST)
+        if not content:
+            return Response({"detail": "content is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            suggestions, prompt_version, token_usage = generate_edit_suggestions(section=section, content=content)
+        except (GeminiApiKeyMissingError, GeminiApiKeyLeakedError, GeminiQuotaExceededError, GeminiApiRequestError, GeminiApiResponseError) as exc:
+            AIUsageService.log_action(
+                user=request.user,
+                project=project,
+                action_type=AIUsageLog.ACTION_EDIT_SUGGESTIONS,
+                status=AIUsageLog.STATUS_FAILURE,
+                error_message=str(exc),
+            )
+            return gemini_error_response(exc, "Edit suggestions")
+
+        AIUsageService.log_action(
+            user=request.user,
+            project=project,
+            action_type=AIUsageLog.ACTION_EDIT_SUGGESTIONS,
+            status=AIUsageLog.STATUS_SUCCESS,
+            prompt_version=prompt_version,
+            token_usage=token_usage,
+        )
+        return Response(suggestions, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["GET"], url_path="export")
     def export_project(self, request, pk=None):
@@ -497,17 +661,29 @@ def generate_proposal(request):
         "call_notes": call_notes,
     }
 
+    prompt_version = get_active_prompt_version(AIPromptVersion.PURPOSE_FULL_PROPOSAL)
     try:
-        generated = generate_structured_proposal(intake)
+        generated_result = generate_structured_proposal(intake, prompt_version=prompt_version, include_usage=True)
+        if isinstance(generated_result, GeminiJsonResult):
+            generated = generated_result.data
+            token_usage = generated_result.token_usage
+        else:
+            generated = generated_result
+            token_usage = {}
     except GeminiApiKeyMissingError as exc:
+        AIUsageService.log_action(user=request.user, action_type=AIUsageLog.ACTION_FULL_PROPOSAL, status=AIUsageLog.STATUS_FAILURE, prompt_version=prompt_version, error_message=str(exc))
         return gemini_error_response(exc, "Proposal generation")
     except GeminiApiKeyLeakedError as exc:
+        AIUsageService.log_action(user=request.user, action_type=AIUsageLog.ACTION_FULL_PROPOSAL, status=AIUsageLog.STATUS_FAILURE, prompt_version=prompt_version, error_message=str(exc))
         return gemini_error_response(exc, "Proposal generation")
     except GeminiQuotaExceededError as exc:
+        AIUsageService.log_action(user=request.user, action_type=AIUsageLog.ACTION_FULL_PROPOSAL, status=AIUsageLog.STATUS_FAILURE, prompt_version=prompt_version, error_message=str(exc))
         return gemini_error_response(exc, "Proposal generation")
     except GeminiApiRequestError as exc:
+        AIUsageService.log_action(user=request.user, action_type=AIUsageLog.ACTION_FULL_PROPOSAL, status=AIUsageLog.STATUS_FAILURE, prompt_version=prompt_version, error_message=str(exc))
         return gemini_error_response(exc, "Proposal generation")
     except GeminiApiResponseError as exc:
+        AIUsageService.log_action(user=request.user, action_type=AIUsageLog.ACTION_FULL_PROPOSAL, status=AIUsageLog.STATUS_FAILURE, prompt_version=prompt_version, error_message=str(exc))
         return gemini_error_response(exc, "Proposal generation")
 
     project_name = str(request.data.get("project_name", "")).strip() or f"{client_name} Proposal"
@@ -543,6 +719,14 @@ def generate_proposal(request):
 
     create_project_version(project, source="generate", changed_sections=SECTION_FIELDS)
     AIUsageService.increment_usage(request.user)
+    AIUsageService.log_action(
+        user=request.user,
+        project=project,
+        action_type=AIUsageLog.ACTION_FULL_PROPOSAL,
+        status=AIUsageLog.STATUS_SUCCESS,
+        prompt_version=prompt_version,
+        token_usage=token_usage,
+    )
 
     return Response(ProposalProjectSerializer(project).data, status=status.HTTP_201_CREATED)
 
