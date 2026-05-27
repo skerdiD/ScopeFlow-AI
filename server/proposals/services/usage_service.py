@@ -38,6 +38,16 @@ class UsageStatus:
 
 class AIUsageService:
     @staticmethod
+    def _clean_token_count(value):
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0 else None
+
+    @staticmethod
     def current_period() -> date:
         today = timezone.localdate()
         return today.replace(day=1)
@@ -79,6 +89,39 @@ class AIUsageService:
 
     @staticmethod
     @transaction.atomic
+    def consume_generation_if_available(user) -> tuple[bool, UsageStatus]:
+        user_plan, _created = UserPlan.objects.get_or_create(user=user)
+        user_plan = UserPlan.objects.select_for_update().get(pk=user_plan.pk)
+
+        period = AIUsageService.current_period()
+        usage, _created = UsageRecord.objects.select_for_update().get_or_create(user=user, period=period)
+
+        is_unlimited = user_plan.plan in UNLIMITED_PLANS
+        limit = None if is_unlimited else PLAN_LIMITS.get(user_plan.plan, PLAN_LIMITS[UserPlan.PLAN_FREE])
+        if not is_unlimited and usage.ai_generations_used >= (limit or 0):
+            return False, UsageStatus(
+                plan=user_plan.plan,
+                used=usage.ai_generations_used,
+                limit=limit,
+                remaining=0,
+                is_unlimited=False,
+                period=usage.period.strftime("%Y-%m"),
+            )
+
+        usage.ai_generations_used += 1
+        usage.save(update_fields=["ai_generations_used", "updated_at"])
+
+        return True, UsageStatus(
+            plan=user_plan.plan,
+            used=usage.ai_generations_used,
+            limit=limit,
+            remaining=None if is_unlimited else max(0, (limit or 0) - usage.ai_generations_used),
+            is_unlimited=is_unlimited,
+            period=usage.period.strftime("%Y-%m"),
+        )
+
+    @staticmethod
+    @transaction.atomic
     def increment_usage(user) -> UsageStatus:
         period = AIUsageService.current_period()
         usage = (
@@ -112,9 +155,9 @@ class AIUsageService:
             status=status,
             prompt_version=prompt_version,
             error_message=error_message[:2000],
-            input_tokens=token_usage.get("input_tokens"),
-            output_tokens=token_usage.get("output_tokens"),
-            total_tokens=token_usage.get("total_tokens"),
+            input_tokens=AIUsageService._clean_token_count(token_usage.get("input_tokens")),
+            output_tokens=AIUsageService._clean_token_count(token_usage.get("output_tokens")),
+            total_tokens=AIUsageService._clean_token_count(token_usage.get("total_tokens")),
             # TODO: Connect provider-specific pricing once Gemini model billing rates are configured.
             estimated_cost=None,
         )

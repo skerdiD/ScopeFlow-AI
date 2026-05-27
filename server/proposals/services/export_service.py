@@ -26,7 +26,10 @@ class ExportSections:
     scope_of_work: list[str]
     deliverables: list[str]
     milestones: list[MilestoneItem]
+    timeline: list[str]
+    pricing: list[str]
     risks: list[str]
+    next_steps: list[str]
 
 
 def _safe_filename_part(value: str, fallback: str) -> str:
@@ -108,14 +111,20 @@ def build_export_sections(
     scope: str,
     deliverables: str,
     milestones: str,
-    risks: str,
+    proposal_timeline: str = "",
+    pricing: str = "",
+    risks: str = "",
+    next_steps: str = "",
 ) -> ExportSections:
     return ExportSections(
         summary=_to_paragraphs(summary),
         scope_of_work=_to_list_items(scope),
         deliverables=_to_list_items(deliverables),
         milestones=_to_milestones(milestones),
+        timeline=_to_list_items(proposal_timeline),
+        pricing=_to_list_items(pricing),
         risks=_to_list_items(risks),
+        next_steps=_to_list_items(next_steps),
     )
 
 
@@ -221,8 +230,17 @@ def generate_pdf_export(
         [f"{milestone.title}: {milestone.description}" for milestone in sections.milestones],
     )
 
+    _append_section_header(story, heading_style, "Timeline")
+    _append_bullets(story, bullet_style, sections.timeline)
+
+    _append_section_header(story, heading_style, "Pricing")
+    _append_bullets(story, bullet_style, sections.pricing)
+
     _append_section_header(story, heading_style, "Risks")
     _append_bullets(story, bullet_style, sections.risks)
+
+    _append_section_header(story, heading_style, "Next Steps")
+    _append_bullets(story, bullet_style, sections.next_steps)
 
     story.append(Spacer(1, 14))
     story.append(
@@ -291,8 +309,20 @@ def generate_docx_export(
         milestone_paragraph.add_run(f"{item.title}: ").bold = True
         milestone_paragraph.add_run(item.description)
 
+    document.add_heading("Timeline", level=1)
+    for item in sections.timeline:
+        document.add_paragraph(item, style="List Bullet")
+
+    document.add_heading("Pricing", level=1)
+    for item in sections.pricing:
+        document.add_paragraph(item, style="List Bullet")
+
     document.add_heading("Risks", level=1)
     for item in sections.risks:
+        document.add_paragraph(item, style="List Bullet")
+
+    document.add_heading("Next Steps", level=1)
+    for item in sections.next_steps:
         document.add_paragraph(item, style="List Bullet")
 
     document.add_paragraph("")

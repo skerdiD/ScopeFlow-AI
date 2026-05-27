@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from .models import AIQualityReview, AIUsageLog, ProposalProject, ProposalVersion, UsageRecord, UserPlan
-from .services.usage_service import AIUsageService
+from .services.usage_service import AIUsageService, UsageStatus
 from .services import GeminiApiKeyMissingError
 
 
@@ -314,6 +314,19 @@ class ProposalProjectApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_mark_final_validates_payload_before_saving(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+
+        self._authenticate(self.owner)
+        mark_final_url = reverse("proposal-project-mark-final", args=[project.id])
+        response = self.client.post(mark_final_url, {"client_name": "x" * 256}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("client_name", response.data)
+        project.refresh_from_db()
+        self.assertEqual(project.status, "draft")
+        self.assertEqual(project.versions.count(), 0)
+
     def test_export_project_requires_authentication(self):
         project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
 
@@ -398,6 +411,26 @@ class ProposalProjectApiTests(APITestCase):
         xml_content = archive.read("word/document.xml").decode("utf-8")
         self.assertIn("Final summary for client export", xml_content)
         self.assertNotIn("Current summary that should not be exported", xml_content)
+
+    def test_export_project_docx_includes_extended_sections(self):
+        project = ProposalProject.objects.create(
+            user_id=self.owner.username,
+            **self._project_payload(
+                proposal_timeline="- Week 1: Discovery\n- Week 2: Build",
+                pricing="- Fixed project fee: $12,000",
+                next_steps="- Approve scope\n- Schedule kickoff",
+            ),
+        )
+
+        self._authenticate(self.owner)
+        response = self.client.get(f"/api/projects/{project.id}/export/?file_type=docx")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        archive = zipfile.ZipFile(io.BytesIO(response.content))
+        xml_content = archive.read("word/document.xml").decode("utf-8")
+        self.assertIn("Timeline", xml_content)
+        self.assertIn("Fixed project fee", xml_content)
+        self.assertIn("Schedule kickoff", xml_content)
 
     def test_export_project_invalid_format_returns_400(self):
         project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
@@ -517,6 +550,75 @@ class ProposalProjectApiTests(APITestCase):
         self.assertEqual(response.data["usage"]["remaining"], 0)
         mock_generate_structured_proposal.assert_not_called()
         self.assertEqual(ProposalProject.objects.filter(user_id=self.owner.username).count(), 0)
+
+    @patch("proposals.views.generate_structured_proposal")
+    def test_generate_endpoint_validates_project_name_before_ai_call(self, mock_generate_structured_proposal):
+        self._authenticate(self.owner)
+        response = self.client.post(
+            self.generate_url,
+            self._generate_payload(project_name="x" * 256),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("project_name exceeds the maximum length", response.data["detail"])
+        mock_generate_structured_proposal.assert_not_called()
+
+    @patch("proposals.views.AIUsageService.consume_generation_if_available")
+    @patch("proposals.views.generate_structured_proposal")
+    def test_generate_endpoint_rechecks_usage_after_ai_success(
+        self,
+        mock_generate_structured_proposal,
+        mock_consume_generation,
+    ):
+        mock_generate_structured_proposal.return_value = {
+            "summary": "Generated summary",
+            "scope_of_work": ["Discovery", "Build", "QA", "Launch"],
+            "deliverables": [
+                "Scope plan",
+                "Core implementation",
+                "QA checklist",
+                "Launch handover",
+                "Post-launch notes",
+            ],
+            "milestones": [
+                {"title": "Discovery", "description": "Confirm requirements and architecture."},
+                {"title": "Build", "description": "Implement and review core features."},
+                {"title": "Launch", "description": "Deploy and hand over."},
+            ],
+            "risks": ["Scope changes", "Feedback delays"],
+        }
+        UsageRecord.objects.create(
+            user=self.owner,
+            period=AIUsageService.current_period(),
+            ai_generations_used=2,
+        )
+        mock_consume_generation.return_value = (
+            False,
+            UsageStatus(
+                plan="free",
+                used=3,
+                limit=3,
+                remaining=0,
+                is_unlimited=False,
+                period=AIUsageService.current_period().strftime("%Y-%m"),
+            ),
+        )
+
+        self._authenticate(self.owner)
+        response = self.client.post(self.generate_url, self._generate_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        mock_generate_structured_proposal.assert_called_once()
+        mock_consume_generation.assert_called_once_with(self.owner)
+        self.assertEqual(ProposalProject.objects.filter(user_id=self.owner.username).count(), 0)
+        self.assertTrue(
+            AIUsageLog.objects.filter(
+                user=self.owner,
+                action_type=AIUsageLog.ACTION_FULL_PROPOSAL,
+                status=AIUsageLog.STATUS_FAILURE,
+            ).exists()
+        )
 
     def test_usage_status_endpoint_returns_current_free_usage(self):
         UsageRecord.objects.create(

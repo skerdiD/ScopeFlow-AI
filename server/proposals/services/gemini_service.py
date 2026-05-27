@@ -1409,7 +1409,10 @@ def generate_quality_review(*, project_context: dict[str, Any]) -> tuple[dict[st
     if not isinstance(result, GeminiJsonResult):
         raise GeminiApiResponseError("Gemini returned invalid quality review metadata.")
 
-    score = int(result.data.get("score", 0))
+    try:
+        score = int(result.data.get("score", 0))
+    except (TypeError, ValueError) as exc:
+        raise GeminiApiResponseError("Gemini returned an invalid quality review score.") from exc
     review = {
         "score": max(0, min(100, score)),
         "summary": _truncate_words(str(result.data.get("summary", "")).strip(), 45),

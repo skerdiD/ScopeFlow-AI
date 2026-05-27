@@ -2,6 +2,7 @@ import logging
 
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
+from django.db import transaction
 from django.db.models import Max
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
@@ -10,7 +11,7 @@ from rest_framework.response import Response
 
 from .models import AIQualityReview, AIUsageLog, AIPromptVersion, ProposalProject, ProposalVersion
 from .serializers import AIQualityReviewSerializer, ProposalProjectListSerializer, ProposalProjectSerializer
-from .throttling import GenerateProposalRateThrottle, GenerateTemplateRateThrottle
+from .throttling import GenerateAIActionRateThrottle, GenerateProposalRateThrottle, GenerateTemplateRateThrottle
 from .services import (
     GeminiApiKeyLeakedError,
     GeminiApiKeyMissingError,
@@ -379,7 +380,10 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["POST"], url_path="mark-final")
     def mark_final(self, request, pk=None):
         project = self.get_object()
-        apply_request_fields_to_project(project, request.data)
+        serializer = self.get_serializer(project, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        apply_request_fields_to_project(project, serializer.validated_data)
         project.status = "completed"
         project.save()
 
@@ -393,7 +397,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 
         return Response(ProposalProjectSerializer(project).data)
 
-    @action(detail=True, methods=["POST"], url_path="regenerate-section")
+    @action(detail=True, methods=["POST"], url_path="regenerate-section", throttle_classes=[GenerateAIActionRateThrottle])
     def regenerate_section(self, request, pk=None):
         project = self.get_object()
         section = str(request.data.get("section", "")).strip().lower()
@@ -440,7 +444,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 
         return Response(ProposalProjectSerializer(project).data, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=["POST"], url_path="quality-review")
+    @action(detail=True, methods=["POST"], url_path="quality-review", throttle_classes=[GenerateAIActionRateThrottle])
     def quality_review(self, request, pk=None):
         project = self.get_object()
 
@@ -473,7 +477,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
         )
         return Response(AIQualityReviewSerializer(review).data, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=["POST"], url_path="edit-suggestions")
+    @action(detail=True, methods=["POST"], url_path="edit-suggestions", throttle_classes=[GenerateAIActionRateThrottle])
     def edit_suggestions(self, request, pk=None):
         project = self.get_object()
         section = str(request.data.get("section", "")).strip().lower()
@@ -547,14 +551,20 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
         scope = selected_version.scope if selected_version else project.scope
         deliverables = selected_version.deliverables if selected_version else project.deliverables
         milestones = selected_version.milestones if selected_version else project.milestones
+        proposal_timeline = selected_version.proposal_timeline if selected_version else project.proposal_timeline
+        pricing = selected_version.pricing if selected_version else project.pricing
         risks = selected_version.risks if selected_version else project.risks
+        next_steps = selected_version.next_steps if selected_version else project.next_steps
 
         sections = build_export_sections(
             summary=summary,
             scope=scope,
             deliverables=deliverables,
             milestones=milestones,
+            proposal_timeline=proposal_timeline,
+            pricing=pricing,
             risks=risks,
+            next_steps=next_steps,
         )
 
         if export_format == "pdf":
@@ -651,6 +661,18 @@ def generate_proposal(request):
     if not project_goals:
         return Response({"detail": "project_goals is required."}, status=status.HTTP_400_BAD_REQUEST)
 
+    project_name = str(request.data.get("project_name", "")).strip() or f"{client_name} Proposal"
+    if len(project_name) > INTAKE_MAX_LENGTHS["project_name"]:
+        return Response(
+            {
+                "detail": (
+                    f"project_name exceeds the maximum length of "
+                    f"{INTAKE_MAX_LENGTHS['project_name']} characters."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     intake = {
         "client_name": client_name,
         "business_type": business_type,
@@ -686,47 +708,53 @@ def generate_proposal(request):
         AIUsageService.log_action(user=request.user, action_type=AIUsageLog.ACTION_FULL_PROPOSAL, status=AIUsageLog.STATUS_FAILURE, prompt_version=prompt_version, error_message=str(exc))
         return gemini_error_response(exc, "Proposal generation")
 
-    project_name = str(request.data.get("project_name", "")).strip() or f"{client_name} Proposal"
-    if len(project_name) > INTAKE_MAX_LENGTHS["project_name"]:
-        return Response(
-            {
-                "detail": (
-                    f"project_name exceeds the maximum length of "
-                    f"{INTAKE_MAX_LENGTHS['project_name']} characters."
-                )
-            },
-            status=status.HTTP_400_BAD_REQUEST,
+    with transaction.atomic():
+        usage_consumed, usage_status = AIUsageService.consume_generation_if_available(request.user)
+        if not usage_consumed:
+            AIUsageService.log_action(
+                user=request.user,
+                action_type=AIUsageLog.ACTION_FULL_PROPOSAL,
+                status=AIUsageLog.STATUS_FAILURE,
+                prompt_version=prompt_version,
+                error_message="Monthly AI generation limit reached before saving generated proposal.",
+                token_usage=token_usage,
+            )
+            return Response(
+                {
+                    "detail": "You have reached your monthly AI generation limit. Upgrade to generate more proposals.",
+                    "usage": usage_status.as_dict(),
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        requirement_sections = [f"Project goals: {project_goals}"]
+        if required_features:
+            requirement_sections.append(f"Required features: {required_features}")
+        if call_notes:
+            requirement_sections.append(f"Call notes: {call_notes}")
+
+        project = ProposalProject(
+            user_id=owner_id,
+            client_name=client_name,
+            project_name=project_name,
+            project_type=business_type,
+            budget=budget_range,
+            timeline=timeline,
+            requirements="\n".join(requirement_sections).strip(),
+            status="in_review",
         )
+        apply_generated_proposal_to_project(project, generated)
+        project.save()
 
-    requirement_sections = [f"Project goals: {project_goals}"]
-    if required_features:
-        requirement_sections.append(f"Required features: {required_features}")
-    if call_notes:
-        requirement_sections.append(f"Call notes: {call_notes}")
-
-    project = ProposalProject(
-        user_id=owner_id,
-        client_name=client_name,
-        project_name=project_name,
-        project_type=business_type,
-        budget=budget_range,
-        timeline=timeline,
-        requirements="\n".join(requirement_sections).strip(),
-        status="in_review",
-    )
-    apply_generated_proposal_to_project(project, generated)
-    project.save()
-
-    create_project_version(project, source="generate", changed_sections=SECTION_FIELDS)
-    AIUsageService.increment_usage(request.user)
-    AIUsageService.log_action(
-        user=request.user,
-        project=project,
-        action_type=AIUsageLog.ACTION_FULL_PROPOSAL,
-        status=AIUsageLog.STATUS_SUCCESS,
-        prompt_version=prompt_version,
-        token_usage=token_usage,
-    )
+        create_project_version(project, source="generate", changed_sections=SECTION_FIELDS)
+        AIUsageService.log_action(
+            user=request.user,
+            project=project,
+            action_type=AIUsageLog.ACTION_FULL_PROPOSAL,
+            status=AIUsageLog.STATUS_SUCCESS,
+            prompt_version=prompt_version,
+            token_usage=token_usage,
+        )
 
     return Response(ProposalProjectSerializer(project).data, status=status.HTTP_201_CREATED)
 

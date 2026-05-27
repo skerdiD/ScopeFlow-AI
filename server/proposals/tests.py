@@ -6,8 +6,10 @@ from .services.gemini_service import (
     GeminiApiKeyLeakedError,
     GeminiApiKeyMissingError,
     GeminiApiResponseError,
+    GeminiJsonResult,
     GeminiQuotaExceededError,
     _clean_json_text,
+    generate_quality_review,
     generate_template_draft,
     generate_structured_proposal,
     normalize_generated_proposal,
@@ -213,3 +215,19 @@ class GeminiServiceTests(TestCase):
         self.assertTrue(draft["description"])
         self.assertTrue(draft["category"])
         self.assertTrue(draft["sections"]["scope"]["content"])
+
+    @patch("proposals.services.gemini_service._call_gemini_json_response")
+    def test_generate_quality_review_rejects_invalid_score(self, mock_call: Mock):
+        mock_call.return_value = GeminiJsonResult(
+            data={
+                "score": "strong",
+                "summary": "Readable proposal.",
+                "strengths": ["Clear summary"],
+                "weaknesses": ["Pricing is vague"],
+                "recommendations": ["Clarify pricing"],
+            },
+            token_usage={},
+        )
+
+        with self.assertRaises(GeminiApiResponseError):
+            generate_quality_review(project_context={"project_name": "Acme Website"})

@@ -220,5 +220,6 @@ REST_FRAMEWORK = {
         "user": os.getenv("DRF_THROTTLE_USER", "600/min"),
         "generate_proposal": os.getenv("DRF_THROTTLE_GENERATE_PROPOSAL", "30/hour"),
         "generate_template": os.getenv("DRF_THROTTLE_GENERATE_TEMPLATE", "30/hour"),
+        "generate_ai_action": os.getenv("DRF_THROTTLE_GENERATE_AI_ACTION", "60/hour"),
     },
 }

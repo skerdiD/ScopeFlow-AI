@@ -87,7 +87,10 @@ The goal was not only to build an AI wrapper, but to show full-stack product thi
 * Scope of work
 * Deliverables
 * Milestones
+* Timeline
+* Pricing
 * Risks
+* Next steps
 * Editable project details
 * Selected proposal version preview
 * Final version marking
@@ -441,6 +444,7 @@ The backend includes security-focused API hardening:
 * Request-size guards on generation routes
 * Hardened auth request handling
 * Reduced low-level error leakage
+* Throttling for AI review and section-regeneration actions
 * Dependency update for ORM advisory fix
 
 ---

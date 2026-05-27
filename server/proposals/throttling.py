@@ -7,3 +7,7 @@ class GenerateProposalRateThrottle(UserRateThrottle):
 
 class GenerateTemplateRateThrottle(UserRateThrottle):
     scope = "generate_template"
+
+
+class GenerateAIActionRateThrottle(UserRateThrottle):
+    scope = "generate_ai_action"
