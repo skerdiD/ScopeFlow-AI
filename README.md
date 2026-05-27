@@ -417,6 +417,18 @@ python manage.py migrate      # Run database migrations
 python manage.py test         # Run backend tests, if configured
 ```
 
+## Demo Data for Screenshots
+
+Use the backend demo seed command only in local or demo environments.
+
+```bash
+cd server
+python manage.py seed_demo_data
+python manage.py seed_demo_data --reset
+```
+
+By default, the command seeds polished project, version, usage, AI log, and quality review data for `mirejemi896@gmail.com`. It safely resets only known demo project records created by the command.
+
 ---
 
 ## Performance and Security Highlights

@@ -306,6 +306,78 @@ const seededTemplates: ProposalTemplate[] = [
         content: "Data source inconsistencies may affect timeline unless resolved early."
       }
     }
+  }),
+  buildSeedTemplate({
+    id: "seed-ai-automation",
+    name: "AI Automation Proposal",
+    description: "For teams that want to automate repetitive workflows with practical AI-assisted operations.",
+    category: "AI Automation",
+    sections: {
+      summary: {
+        included: true,
+        content:
+          "Design and implement an AI-assisted workflow that reduces manual work, improves response consistency, and keeps human review in the right places."
+      },
+      scope: {
+        included: true,
+        content:
+          "- Workflow audit and automation opportunity mapping\n- Prompt and guardrail design for AI-assisted tasks\n- Integration with existing tools and review steps\n- Testing plan for accuracy, fallback, and escalation behavior"
+      },
+      deliverables: {
+        included: true,
+        content:
+          "- Automation workflow map\n- AI prompt and guardrail documentation\n- Configured automation scenarios\n- QA checklist and team handover guide"
+      },
+      milestones: {
+        included: true,
+        content:
+          "Workflow audit and success criteria\nAutomation design and AI guardrails\nIntegration and testing\nLaunch support and optimization"
+      },
+      timeline: {
+        included: true,
+        content: "5-7 weeks"
+      },
+      risks: {
+        included: true,
+        content: "Incomplete source process documentation can slow automation design and testing."
+      }
+    }
+  }),
+  buildSeedTemplate({
+    id: "seed-agency-retainer",
+    name: "Agency Retainer Proposal",
+    description: "For ongoing design, website, marketing, or product support engagements with a monthly cadence.",
+    category: "Retainer",
+    sections: {
+      summary: {
+        included: true,
+        content:
+          "Provide ongoing delivery support through a monthly retainer focused on prioritized improvements, fast execution, and clear reporting."
+      },
+      scope: {
+        included: true,
+        content:
+          "- Monthly backlog planning and priority management\n- Design, content, and implementation support\n- Analytics review and conversion improvement recommendations\n- Weekly delivery updates and monthly recap"
+      },
+      deliverables: {
+        included: true,
+        content:
+          "- Monthly roadmap and prioritized backlog\n- Completed design or implementation updates\n- Performance review notes\n- Clear next-month recommendations"
+      },
+      milestones: {
+        included: true,
+        content:
+          "Kickoff and backlog setup\nWeekly execution and review\nMonthly performance recap\nNext-month roadmap planning"
+      },
+      timeline: {
+        included: true,
+        content: "Monthly"
+      },
+      assumptions: {
+        included: true,
+        content: "Client provides timely feedback and prioritizes requests before each weekly delivery cycle."
+      }
+    }
   })
 ];
 

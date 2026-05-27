@@ -252,7 +252,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4">
         <nav className="space-y-1.5">
           <SidebarItem item={dashboardItem} active={dashboardItem.match(pathname)} collapsed={collapsed} />
 
