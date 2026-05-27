@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { FileStack, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import { UsageCard } from "@/components/billing/usage-card";
 import { ProposalIntakeForm } from "@/components/project/proposal-intake-form";
-import { generateProposal, type GenerateProposalPayload } from "@/lib/api";
+import { ApiError, generateProposal, getUsageStatus, type GenerateProposalPayload, type UsageStatus } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +16,9 @@ export function NewProjectPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [usage, setUsage] = useState<UsageStatus | null>(null);
+  const [usageLoading, setUsageLoading] = useState(true);
+  const [usageErrorMessage, setUsageErrorMessage] = useState("");
 
   const selectedTemplateId = searchParams.get("template")?.trim() || "";
   const selectedTemplate = useMemo(
@@ -36,7 +40,45 @@ export function NewProjectPage() {
     }
   }, [selectedTemplate, selectedTemplateId, setSearchParams]);
 
+  useEffect(() => {
+    async function loadUsage() {
+      try {
+        setUsageLoading(true);
+        const data = await getUsageStatus();
+        setUsage(data);
+        setUsageErrorMessage("");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to load usage.";
+        setUsageErrorMessage(message);
+      } finally {
+        setUsageLoading(false);
+      }
+    }
+
+    void loadUsage();
+  }, []);
+
+  function getUsageFromError(error: unknown): UsageStatus | null {
+    if (!(error instanceof ApiError) || !error.data || typeof error.data !== "object") {
+      return null;
+    }
+
+    const usageData = (error.data as { usage?: unknown }).usage;
+    if (!usageData || typeof usageData !== "object") {
+      return null;
+    }
+
+    return usageData as UsageStatus;
+  }
+
   async function handleGenerateProposal(payload: GenerateProposalPayload) {
+    if (usage && !usage.is_unlimited && usage.remaining === 0) {
+      const message = "You have reached your monthly AI generation limit. Upgrade to generate more proposals.";
+      setErrorMessage(message);
+      toast.error(message);
+      return;
+    }
+
     try {
       setLoading(true);
       setErrorMessage("");
@@ -70,6 +112,10 @@ export function NewProjectPage() {
       navigate(`/projects/${project.id}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to generate proposal.";
+      const errorUsage = getUsageFromError(error);
+      if (errorUsage) {
+        setUsage(errorUsage);
+      }
       setErrorMessage(message);
       toast.error(message);
     } finally {
@@ -117,6 +163,8 @@ export function NewProjectPage() {
       ) : null}
 
       {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
+
+      <UsageCard usage={usage} loading={usageLoading} errorMessage={usageErrorMessage} compact />
 
       <ProposalIntakeForm
         loading={loading}

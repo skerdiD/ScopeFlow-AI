@@ -119,6 +119,29 @@ export type GenerateTemplatePayload = {
   existing_categories?: string[];
 };
 
+export type PlanName = "free" | "pro" | "business";
+
+export type UsageStatus = {
+  plan: PlanName;
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+  is_unlimited: boolean;
+  period: string;
+};
+
+export class ApiError extends Error {
+  status: number;
+  data: unknown;
+
+  constructor(message: string, status: number, data: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.data = data;
+  }
+}
+
 async function createAuthHeaders(contentType = false): Promise<Record<string, string>> {
   const headers: Record<string, string> = {};
   if (contentType) {
@@ -140,15 +163,20 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
   if (!response.ok) {
     let message = "Request failed.";
+    let errorData: unknown = null;
 
     if (expectsJson) {
-      const data = await response.json();
-      message = data.detail || JSON.stringify(data);
+      errorData = await response.json();
+      if (errorData && typeof errorData === "object" && "detail" in errorData) {
+        message = String((errorData as { detail?: unknown }).detail || message);
+      } else {
+        message = JSON.stringify(errorData);
+      }
     } else {
       message = response.statusText || message;
     }
 
-    throw new Error(message);
+    throw new ApiError(message, response.status, errorData);
   }
 
   if (!expectsJson) {
@@ -206,6 +234,12 @@ export async function generateTemplateDraft(payload: GenerateTemplatePayload): P
   });
 
   return handleResponse<TemplateDraftInput>(response);
+}
+
+export async function getUsageStatus(): Promise<UsageStatus> {
+  const headers = await createAuthHeaders();
+  const response = await fetch(`${getApiBaseUrl()}/usage/`, { headers });
+  return handleResponse<UsageStatus>(response);
 }
 
 export async function updateProject(id: string, payload: ProposalProjectPayload): Promise<ProposalProject> {

@@ -74,6 +74,13 @@ function getPageContext(pathname: string): PageContext {
     };
   }
 
+  if (pathname.startsWith("/billing")) {
+    return {
+      title: "Usage and Billing",
+      subtitle: "Review plan limits and monthly AI proposal generation usage."
+    };
+  }
+
   return {
     title: "ScopeFlow AI",
     subtitle: "AI proposal workspace"

@@ -2,6 +2,7 @@ import { useEffect, useState, type ComponentType } from "react";
 import {
   Activity,
   ChevronDown,
+  CreditCard,
   FileStack,
   FolderKanban,
   LayoutDashboard,
@@ -99,6 +100,13 @@ const secondaryItems: NavItem[] = [
     to: "/activity",
     icon: Activity,
     match: (pathname) => pathname.startsWith("/activity")
+  },
+  {
+    key: "billing",
+    label: "Usage & Billing",
+    to: "/billing",
+    icon: CreditCard,
+    match: (pathname) => pathname.startsWith("/billing")
   }
 ];
 

@@ -19,6 +19,7 @@ import {
   Trash2
 } from "lucide-react";
 import { toast } from "sonner";
+import { UsageCard } from "@/components/billing/usage-card";
 import { DashboardMetricCard } from "@/components/dashboard/dashboard-metric-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,9 +29,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   createProject,
   deleteProject,
+  getUsageStatus,
   getProjects,
   type ProposalProjectListItem,
-  type ProposalProjectPayload
+  type ProposalProjectPayload,
+  type UsageStatus
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -84,6 +87,9 @@ export function DashboardPage() {
   const [projects, setProjects] = useState<ProposalProjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [usage, setUsage] = useState<UsageStatus | null>(null);
+  const [usageLoading, setUsageLoading] = useState(true);
+  const [usageErrorMessage, setUsageErrorMessage] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -111,9 +117,31 @@ export function DashboardPage() {
     }
   }, [user?.id]);
 
+  const loadUsage = useCallback(async () => {
+    if (!user?.id) {
+      return;
+    }
+
+    try {
+      setUsageLoading(true);
+      const data = await getUsageStatus();
+      setUsage(data);
+      setUsageErrorMessage("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to fetch usage.";
+      setUsageErrorMessage(message);
+    } finally {
+      setUsageLoading(false);
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     void loadProjects();
   }, [loadProjects]);
+
+  useEffect(() => {
+    void loadUsage();
+  }, [loadUsage]);
 
   const sortedProjects = useMemo(() => {
     return [...projects].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
@@ -722,6 +750,8 @@ export function DashboardPage() {
         </Card>
 
         <div className="space-y-5">
+          <UsageCard usage={usage} loading={usageLoading} errorMessage={usageErrorMessage} compact />
+
           <Card className="border-border/70 shadow-sm">
             <CardHeader>
               <div className="flex items-start justify-between gap-3">

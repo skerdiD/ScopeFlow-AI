@@ -7,7 +7,8 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import ProposalProject, ProposalVersion
+from .models import ProposalProject, ProposalVersion, UsageRecord, UserPlan
+from .services.usage_service import AIUsageService
 from .services import GeminiApiKeyMissingError
 
 
@@ -15,6 +16,7 @@ class ProposalProjectApiTests(APITestCase):
     def setUp(self):
         self.projects_url = reverse("proposal-project-list")
         self.generate_url = "/api/generate/"
+        self.usage_url = "/api/usage/"
         self.owner = get_user_model().objects.create_user(
             username="user-owner-123",
             email="owner@example.com",
@@ -465,6 +467,85 @@ class ProposalProjectApiTests(APITestCase):
         self.assertEqual(project.status, "in_review")
         self.assertEqual(project.versions.count(), 1)
         self.assertEqual(project.versions.first().source, "generate")
+        usage = UsageRecord.objects.get(user=self.owner, period=AIUsageService.current_period())
+        self.assertEqual(usage.ai_generations_used, 1)
+
+    @patch("proposals.views.generate_structured_proposal")
+    def test_free_user_can_generate_while_under_limit(self, mock_generate_structured_proposal):
+        mock_generate_structured_proposal.return_value = {
+            "summary": "Generated summary",
+            "scope_of_work": ["Discovery"],
+            "deliverables": ["Proposal draft"],
+            "milestones": [{"title": "Draft", "description": "Create proposal."}],
+            "risks": ["Feedback delay"],
+        }
+        UsageRecord.objects.create(
+            user=self.owner,
+            period=AIUsageService.current_period(),
+            ai_generations_used=2,
+        )
+
+        self._authenticate(self.owner)
+        response = self.client.post(self.generate_url, self._generate_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mock_generate_structured_proposal.assert_called_once()
+        usage = UsageRecord.objects.get(user=self.owner, period=AIUsageService.current_period())
+        self.assertEqual(usage.ai_generations_used, 3)
+
+    @patch("proposals.views.generate_structured_proposal")
+    def test_free_user_is_blocked_after_reaching_limit(self, mock_generate_structured_proposal):
+        UsageRecord.objects.create(
+            user=self.owner,
+            period=AIUsageService.current_period(),
+            ai_generations_used=3,
+        )
+
+        self._authenticate(self.owner)
+        response = self.client.post(self.generate_url, self._generate_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertEqual(response.data["usage"]["plan"], "free")
+        self.assertEqual(response.data["usage"]["used"], 3)
+        self.assertEqual(response.data["usage"]["limit"], 3)
+        self.assertEqual(response.data["usage"]["remaining"], 0)
+        mock_generate_structured_proposal.assert_not_called()
+        self.assertEqual(ProposalProject.objects.filter(user_id=self.owner.username).count(), 0)
+
+    def test_usage_status_endpoint_returns_current_free_usage(self):
+        UsageRecord.objects.create(
+            user=self.owner,
+            period=AIUsageService.current_period(),
+            ai_generations_used=2,
+        )
+
+        self._authenticate(self.owner)
+        response = self.client.get(self.usage_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["plan"], "free")
+        self.assertEqual(response.data["used"], 2)
+        self.assertEqual(response.data["limit"], 3)
+        self.assertEqual(response.data["remaining"], 1)
+        self.assertFalse(response.data["is_unlimited"])
+
+    def test_usage_status_endpoint_returns_business_as_unlimited(self):
+        UserPlan.objects.create(user=self.owner, plan=UserPlan.PLAN_BUSINESS)
+        UsageRecord.objects.create(
+            user=self.owner,
+            period=AIUsageService.current_period(),
+            ai_generations_used=120,
+        )
+
+        self._authenticate(self.owner)
+        response = self.client.get(self.usage_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["plan"], "business")
+        self.assertEqual(response.data["used"], 120)
+        self.assertIsNone(response.data["limit"])
+        self.assertIsNone(response.data["remaining"])
+        self.assertTrue(response.data["is_unlimited"])
 
     def test_generate_endpoint_requires_authentication(self):
         response = self.client.post(self.generate_url, self._generate_payload(), format="json")

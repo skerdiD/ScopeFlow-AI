@@ -1,4 +1,44 @@
+from django.conf import settings
 from django.db import models
+
+
+class UserPlan(models.Model):
+    PLAN_FREE = "free"
+    PLAN_PRO = "pro"
+    PLAN_BUSINESS = "business"
+
+    PLAN_CHOICES = [
+        (PLAN_FREE, "Free"),
+        (PLAN_PRO, "Pro"),
+        (PLAN_BUSINESS, "Business"),
+    ]
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, related_name="plan", on_delete=models.CASCADE)
+    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default=PLAN_FREE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.plan}"
+
+
+class UsageRecord(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="usage_records", on_delete=models.CASCADE)
+    period = models.DateField(db_index=True)
+    ai_generations_used = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "period"], name="unique_user_usage_period"),
+        ]
+        indexes = [
+            models.Index(fields=["user", "period"], name="usage_user_period_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.period:%Y-%m} - {self.ai_generations_used}"
 
 
 class ProposalProject(models.Model):

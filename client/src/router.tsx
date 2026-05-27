@@ -16,6 +16,7 @@ const ProjectDetailsPage = lazy(async () => ({ default: (await import("@/pages/p
 const TemplatesPage = lazy(async () => ({ default: (await import("@/pages/templates-page")).TemplatesPage }));
 const ActivityPage = lazy(async () => ({ default: (await import("@/pages/activity-page")).ActivityPage }));
 const SettingsPage = lazy(async () => ({ default: (await import("@/pages/settings-page")).SettingsPage }));
+const BillingPage = lazy(async () => ({ default: (await import("@/pages/billing-page")).BillingPage }));
 
 function withPageLoader(element: ReactNode) {
   return (
@@ -85,6 +86,10 @@ export const router = createBrowserRouter([
       {
         path: "/settings",
         element: withPageLoader(<SettingsPage />)
+      },
+      {
+        path: "/billing",
+        element: withPageLoader(<BillingPage />)
       },
       {
         path: "/projects/:id",

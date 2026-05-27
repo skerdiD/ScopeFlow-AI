@@ -26,6 +26,7 @@ from .services.export_service import (
     generate_docx_export,
     generate_pdf_export,
 )
+from .services.usage_service import AIUsageService
 
 
 logger = logging.getLogger(__name__)
@@ -429,6 +430,16 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 @throttle_classes([GenerateProposalRateThrottle])
 def generate_proposal(request):
     owner_id = get_request_user_id(request)
+    can_generate, usage_status = AIUsageService.can_generate(request.user)
+    if not can_generate:
+        return Response(
+            {
+                "detail": "You have reached your monthly AI generation limit. Upgrade to generate more proposals.",
+                "usage": usage_status.as_dict(),
+            },
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
     client_name = str(request.data.get("client_name", "")).strip()
     business_type = str(
         request.data.get("business_type")
@@ -531,8 +542,15 @@ def generate_proposal(request):
     project.save()
 
     create_project_version(project, source="generate", changed_sections=SECTION_FIELDS)
+    AIUsageService.increment_usage(request.user)
 
     return Response(ProposalProjectSerializer(project).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def usage_status(request):
+    return Response(AIUsageService.get_current_usage(request.user).as_dict(), status=status.HTTP_200_OK)
 
 
 @api_view(["POST"])
