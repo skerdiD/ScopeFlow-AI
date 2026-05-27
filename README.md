@@ -14,21 +14,21 @@ Explore the deployed app: [scope-flow-ai.vercel.app/dashboard](https://scope-flo
 
 ### Landing Page
 
-![ScopeFlow AI landing hero](./client/public/screenshots/landing-hero.png)
+<img src="./client/public/screenshots/landing-hero.png" alt="ScopeFlow AI landing hero" width="100%">
 
-![ScopeFlow AI how it works section](./client/public/screenshots/landing-how-it-works-section.png)
+<img src="./client/public/screenshots/landing-how-it-works-section.png" alt="ScopeFlow AI how it works section" width="100%">
 
 ### SaaS Dashboard
 
-![ScopeFlow AI dashboard overview](./client/public/screenshots/dashboard-overview.png)
+<img src="./client/public/screenshots/dashboard-overview.png" alt="ScopeFlow AI dashboard overview" width="100%">
 
-![ScopeFlow AI projects list](./client/public/screenshots/projects-list.png)
+<img src="./client/public/screenshots/projects-list.png" alt="ScopeFlow AI projects list" width="100%">
 
-![ScopeFlow AI templates library](./client/public/screenshots/templates-library.png)
+<img src="./client/public/screenshots/templates-library.png" alt="ScopeFlow AI templates library" width="100%">
 
-![ScopeFlow AI activity timeline](./client/public/screenshots/activity-timeline.png)
+<img src="./client/public/screenshots/activity-timeline.png" alt="ScopeFlow AI activity timeline" width="100%">
 
-![ScopeFlow AI usage and billing](./client/public/screenshots/usage-billing.png)
+<img src="./client/public/screenshots/usage-billing.png" alt="ScopeFlow AI usage and billing" width="100%">
 
 ---
 
@@ -74,3 +74,4 @@ This project demonstrates full-stack SaaS development, AI integration, authentic
 git clone https://github.com/skerdiD/ScopeFlow-AI.git
 cd ScopeFlow-AI
 cd client && npm install && npm run dev:web
+```
