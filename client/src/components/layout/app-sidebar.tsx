@@ -205,12 +205,12 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
   return (
     <aside
       className={cn(
-        "hidden border-r bg-card/95 backdrop-blur lg:flex lg:flex-col",
+        "sticky top-0 hidden h-screen self-start border-r bg-card/95 backdrop-blur lg:flex lg:flex-col",
         "transition-[width] duration-300 ease-out",
         collapsed ? "w-[84px]" : "w-[280px]"
       )}
     >
-      <div className="flex h-20 items-center border-b px-3">
+      <div className="flex h-20 shrink-0 items-center border-b px-3">
         <div className={cn("flex w-full items-center", collapsed ? "justify-center" : "justify-between gap-3")}>
           <div className={cn("flex min-w-0 items-center", collapsed ? "justify-center" : "gap-3")}>
             {collapsed ? <BrandMark className="size-10 rounded-2xl" /> : null}
@@ -238,7 +238,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
       </div>
 
       {collapsed ? (
-        <div className="px-3 pt-3">
+        <div className="shrink-0 px-3 pt-3">
           <button
             type="button"
             onClick={() => onCollapsedChange(false)}
@@ -252,7 +252,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
         </div>
       ) : null}
 
-      <div className="flex-1 overflow-y-auto px-3 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         <nav className="space-y-1.5">
           <SidebarItem item={dashboardItem} active={dashboardItem.match(pathname)} collapsed={collapsed} />
 
@@ -379,7 +379,7 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
         </nav>
       </div>
 
-      <div className="border-t p-3">
+      <div className="shrink-0 border-t p-3">
         <SidebarItem item={settingsItem} active={settingsItem.match(pathname)} collapsed={collapsed} />
       </div>
     </aside>

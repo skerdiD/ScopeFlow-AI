@@ -81,15 +81,18 @@ export function BillingPage() {
       <div className="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
         <UsageCard usage={usage} loading={loading} errorMessage={errorMessage} />
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {plans.map((plan) => {
             const isCurrent = usage?.plan === plan.key;
 
             return (
-              <Card key={plan.key} className={isCurrent ? "border-primary/50 shadow-sm" : "border-border/70 shadow-sm"}>
-                <CardHeader>
+              <Card
+                key={plan.key}
+                className={isCurrent ? "flex min-w-0 flex-col border-primary/50 shadow-sm" : "flex min-w-0 flex-col border-border/70 shadow-sm"}
+              >
+                <CardHeader className="min-w-0">
                   <div className="flex items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                       <CardTitle>{plan.name}</CardTitle>
                       <CardDescription>{plan.description}</CardDescription>
                     </div>
@@ -98,16 +101,16 @@ export function BillingPage() {
                   <p className="pt-3 text-2xl font-semibold tracking-tight">{plan.price}</p>
                   <p className="text-sm font-medium text-primary">{plan.allowance}</p>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="flex flex-1 flex-col justify-between gap-4">
                   <div className="space-y-2">
                     {plan.features.map((feature) => (
-                      <div key={feature} className="flex items-center gap-2 text-sm">
-                        <CheckCircle2 className="size-4 text-emerald-500" />
+                      <div key={feature} className="flex items-start gap-2 text-sm">
+                        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" />
                         <span>{feature}</span>
                       </div>
                     ))}
                   </div>
-                  <Button className="w-full" disabled>
+                  <Button className="h-auto min-h-10 w-full whitespace-normal px-3 text-center leading-snug" disabled>
                     {isCurrent ? "Current Plan" : "Upgrade Coming Soon"}
                   </Button>
                 </CardContent>
