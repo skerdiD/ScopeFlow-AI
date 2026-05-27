@@ -49,11 +49,14 @@ def _append_origin(origins: list[str], candidate: str) -> None:
 IS_TEST = "test" in sys.argv
 DEFAULT_DEV_SECRET_KEY = "django-insecure-scopeflow-ai-dev-key"
 
-SECRET_KEY = os.getenv("SECRET_KEY", "").strip() or DEFAULT_DEV_SECRET_KEY
 DEBUG = _env_bool("DEBUG", False)
+SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
 
-if not DEBUG and not IS_TEST and SECRET_KEY == DEFAULT_DEV_SECRET_KEY:
-    raise ImproperlyConfigured("SECRET_KEY must be set to a strong value when DEBUG=False.")
+if not SECRET_KEY:
+    if DEBUG or IS_TEST:
+        SECRET_KEY = DEFAULT_DEV_SECRET_KEY
+    else:
+        raise ImproperlyConfigured("SECRET_KEY must be set to a strong value when DEBUG=False.")
 
 _allowed_hosts = _env_csv("ALLOWED_HOSTS")
 _render_external_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
@@ -179,12 +182,13 @@ if not _cors_allowed_origins and (DEBUG or IS_TEST):
 
 _append_origin(_cors_allowed_origins, os.getenv("FRONTEND_URL", ""))
 _append_origin(_cors_allowed_origins, os.getenv("VERCEL_URL", ""))
-_append_origin(_cors_allowed_origins, "https://scope-flow-ai.vercel.app")
 
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = _cors_allowed_origins
 CORS_ALLOW_CREDENTIALS = _env_bool("CORS_ALLOW_CREDENTIALS", False)
 CSRF_TRUSTED_ORIGINS = _env_csv("CSRF_TRUSTED_ORIGINS")
+for _csrf_origin in _cors_allowed_origins:
+    _append_origin(CSRF_TRUSTED_ORIGINS, _csrf_origin)
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
@@ -206,6 +210,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "EXCEPTION_HANDLER": "proposals.exception_handler.safe_exception_handler",
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",

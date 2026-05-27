@@ -68,6 +68,12 @@ class ProposalProjectApiTests(APITestCase):
         response = self.client.get(self.projects_url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_health_check_is_public(self):
+        response = self.client.get("/api/health/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["status"], "ok")
+
     def test_list_projects_returns_only_owner_projects(self):
         ProposalProject.objects.create(
             user_id=self.owner.username,

@@ -363,19 +363,24 @@ pip install -r requirements.txt
 Create a `.env` file inside the `server` folder.
 
 ```env
-SECRET_KEY=
-DEBUG=
-ALLOWED_HOSTS=
-CORS_ALLOWED_ORIGINS=
+SECRET_KEY=replace-with-a-strong-django-secret
+DEBUG=True
+ALLOWED_HOSTS=127.0.0.1,localhost
+CORS_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+CSRF_TRUSTED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+FRONTEND_URL=
 
 SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-SUPABASE_JWT_SECRET=
+SUPABASE_ANON_KEY=
+SUPABASE_AUTH_CACHE_TTL=30
 
-AI_API_KEY=
+DATABASE_URL=
+
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
-Use the exact AI provider key name configured in the backend if it differs.
+For production on Render, set `DEBUG=False`, provide a strong `SECRET_KEY`, set `ALLOWED_HOSTS` to your backend host, and set `FRONTEND_URL` or `CORS_ALLOWED_ORIGINS` to your Vercel frontend origin. Never commit real secrets.
 
 ### 7. Run backend migrations
 
