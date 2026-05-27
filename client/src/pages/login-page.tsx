@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+import { BrandMark } from "@/components/brand/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -47,9 +48,7 @@ export function LoginPage() {
 
       <Card className="border-border/80 bg-card/95 shadow-xl backdrop-blur">
         <CardHeader className="space-y-5">
-          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-            <Sparkles className="size-6" />
-          </div>
+          <BrandMark className="mx-auto size-14 rounded-2xl" />
           <div className="space-y-2 text-center">
             <CardTitle className="text-3xl">Welcome back</CardTitle>
             <CardDescription className="text-base">

@@ -21,6 +21,7 @@ import {
   Target,
   WandSparkles
 } from "lucide-react";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -216,10 +217,7 @@ export function HomePage() {
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/80">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link to="/" className="inline-flex items-center gap-2.5">
-            <span className="inline-flex size-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-sky-500 text-white">
-              <Sparkles className="size-4" />
-            </span>
-            <span className="text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100">ScopeFlow AI</span>
+            <BrandLogo wordmarkClassName="text-slate-900 dark:text-slate-100" />
           </Link>
 
           <nav className="hidden items-center gap-7 text-sm text-slate-600 dark:text-slate-300 md:flex">
@@ -702,10 +700,7 @@ export function HomePage() {
         <div className="mx-auto grid w-full max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr] lg:px-8">
           <div>
             <Link to="/" className="inline-flex items-center gap-2.5">
-              <span className="inline-flex size-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-sky-500 text-white">
-                <Sparkles className="size-4" />
-              </span>
-              <span className="text-sm font-semibold text-white">ScopeFlow AI</span>
+              <BrandLogo wordmarkClassName="text-white" />
             </Link>
             <p className="mt-4 max-w-xs text-sm leading-6 text-slate-400">
               AI-powered proposal workspace for freelancers and agencies that need speed with professional quality.

@@ -8,10 +8,10 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PlusCircle,
-  Settings,
-  Sparkles
+  Settings
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
+import { BrandLogo, BrandMark } from "@/components/brand/brand-logo";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -204,15 +204,15 @@ export function AppSidebar({ collapsed, onCollapsedChange }: AppSidebarProps) {
     >
       <div className="flex h-20 items-center border-b px-3">
         <div className={cn("flex w-full items-center", collapsed ? "justify-center" : "justify-between gap-3")}>
-          <div className={cn("flex items-center", collapsed ? "justify-center" : "gap-3")}>
-            <div className="flex size-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-              <Sparkles className="size-4" />
-            </div>
+          <div className={cn("flex min-w-0 items-center", collapsed ? "justify-center" : "gap-3")}>
+            {collapsed ? <BrandMark className="size-10 rounded-2xl" /> : null}
             {!collapsed ? (
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">ScopeFlow AI</p>
-                <p className="truncate text-xs text-muted-foreground">Proposal workspace</p>
-              </div>
+              <BrandLogo
+                className="min-w-0"
+                subtitle="Proposal workspace"
+                wordmarkClassName="text-foreground"
+                subtitleClassName="text-muted-foreground"
+              />
             ) : null}
           </div>
 

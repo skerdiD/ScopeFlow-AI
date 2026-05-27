@@ -1,5 +1,6 @@
 import { Outlet } from "react-router-dom";
 import { Sparkles, ShieldCheck, FileText } from "lucide-react";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const highlights = [
@@ -29,22 +30,12 @@ export function AuthLayout() {
       </div>
       <div className="relative mx-auto grid min-h-screen max-w-7xl items-center gap-10 px-4 py-10 lg:grid-cols-[1.1fr_520px] lg:px-8">
         <div className="mx-auto flex w-full max-w-md items-center justify-center lg:hidden">
-          <div className="inline-flex items-center gap-2 rounded-full border bg-card px-4 py-2 text-sm font-medium shadow-sm">
-            <span className="flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Sparkles className="size-4" />
-            </span>
-            ScopeFlow AI
-          </div>
+          <BrandLogo className="rounded-full border bg-card px-4 py-2 text-sm font-medium shadow-sm" />
         </div>
 
         <div className="hidden lg:block">
           <div className="max-w-xl space-y-8">
-            <div className="inline-flex items-center gap-2 rounded-full border bg-card px-4 py-2 text-sm font-medium shadow-sm">
-              <span className="flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                <Sparkles className="size-4" />
-              </span>
-              ScopeFlow AI
-            </div>
+            <BrandLogo className="rounded-full border bg-card px-4 py-2 text-sm font-medium shadow-sm" />
 
             <div className="space-y-4">
               <h1 className="text-5xl font-semibold tracking-tight text-foreground">

@@ -1,0 +1,15 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="16" fill="url(#scopeflow-gradient)"/>
+  <path d="M20.8 14.8H14.8V24" stroke="white" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.92"/>
+  <path d="M43.2 49.2H49.2V40" stroke="white" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.92"/>
+  <path d="M44.6 16.8C39.4 13.6 26 13.4 22.4 21.4C18.4 30.4 43.6 28.4 39.8 39.2C37.4 46 25.2 45.6 19.2 41.4" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M47 20.4L48.4 17L50 20.4L53.4 22L50 23.6L48.4 27L47 23.6L43.6 22L47 20.4Z" fill="white"/>
+  <circle cx="18.2" cy="40.8" r="3.2" fill="#67E8F9"/>
+  <defs>
+    <linearGradient id="scopeflow-gradient" x1="7" y1="6" x2="57" y2="59" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4F46E5"/>
+      <stop offset="0.52" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#0EA5E9"/>
+    </linearGradient>
+  </defs>
+</svg>
