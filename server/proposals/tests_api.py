@@ -8,6 +8,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from .models import AIQualityReview, AIUsageLog, ProposalProject, ProposalVersion, UsageRecord, UserPlan
+from .demo import DEMO_EMAIL
 from .services.usage_service import AIUsageService, UsageStatus
 from .services import GeminiApiKeyMissingError
 
@@ -937,5 +938,70 @@ class ProposalProjectApiTests(APITestCase):
         )
 
         response = self.client.get(f"/api/public/proposals/{project.share_token}/")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_demo_user_cannot_delete_projects(self):
+        demo_user = get_user_model().objects.create_user(username="demo-user", email=DEMO_EMAIL)
+        project = ProposalProject.objects.create(user_id=demo_user.username, is_demo=True, **self._project_payload())
+        self._authenticate(demo_user)
+
+        response = self.client.delete(reverse("proposal-project-detail", args=[project.id]))
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(ProposalProject.objects.filter(pk=project.pk).exists())
+
+    @patch("proposals.views.generate_structured_proposal")
+    def test_demo_user_cannot_trigger_ai_generation(self, mock_generate):
+        demo_user = get_user_model().objects.create_user(username="demo-user", email=DEMO_EMAIL)
+        self._authenticate(demo_user)
+
+        response = self.client.post(self.generate_url, self._generate_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        mock_generate.assert_not_called()
+
+    def test_demo_created_projects_are_marked_demo(self):
+        demo_user = get_user_model().objects.create_user(username="demo-user", email=DEMO_EMAIL)
+        self._authenticate(demo_user)
+
+        response = self.client.post(self.projects_url, self._project_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(ProposalProject.objects.get(pk=response.data["id"]).is_demo)
+
+    def test_demo_user_cannot_create_share_link_for_non_demo_project(self):
+        demo_user = get_user_model().objects.create_user(username="demo-user", email=DEMO_EMAIL)
+        project = ProposalProject.objects.create(user_id=demo_user.username, **self._project_payload())
+        self._authenticate(demo_user)
+
+        response = self.client.post(
+            reverse("proposal-project-share-link", args=[project.id]),
+            {"operation": "generate"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_demo_user_cannot_add_payment_link(self):
+        demo_user = get_user_model().objects.create_user(username="demo-user", email=DEMO_EMAIL)
+        project = ProposalProject.objects.create(user_id=demo_user.username, **self._project_payload())
+        self._authenticate(demo_user)
+
+        response = self.client.patch(
+            reverse("proposal-project-detail", args=[project.id]),
+            {"payment_url": "https://example.com/pay"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("payment_url", response.data)
+
+    def test_demo_user_cannot_access_other_user_project(self):
+        demo_user = get_user_model().objects.create_user(username="demo-user", email=DEMO_EMAIL)
+        project = ProposalProject.objects.create(user_id=self.other_user.username, **self._project_payload())
+        self._authenticate(demo_user)
+
+        response = self.client.get(reverse("proposal-project-detail", args=[project.id]))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

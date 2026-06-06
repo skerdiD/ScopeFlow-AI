@@ -8,11 +8,13 @@ import {
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { isDemoEmail } from "@/lib/demo";
 
 type AuthContextType = {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  isDemo: boolean;
   signUp: (
     email: string,
     password: string
@@ -113,6 +115,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       user,
       session,
       loading,
+      isDemo: isDemoEmail(user?.email),
       signUp,
       signIn,
       signOut

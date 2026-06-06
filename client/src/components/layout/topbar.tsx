@@ -2,6 +2,7 @@ import { CreditCard, LogOut, PlusCircle, Settings, User } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -103,7 +104,7 @@ function getPageContext(pathname: string): PageContext {
 }
 
 export function Topbar() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isDemo } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
@@ -132,6 +133,7 @@ export function Topbar() {
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
+          {isDemo ? <Badge variant="outline">Demo mode</Badge> : null}
           <ThemeToggle />
 
           {canShowPrimaryCta ? (

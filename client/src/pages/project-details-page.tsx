@@ -116,7 +116,7 @@ function parseMilestones(value: string): ProposalMilestone[] {
 
 export function ProjectDetailsPage() {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, isDemo } = useAuth();
   const navigate = useNavigate();
 
   const [project, setProject] = useState<ProposalProject | null>(null);
@@ -712,6 +712,10 @@ export function ProjectDetailsPage() {
 
   async function handleDelete() {
     if (!id) {
+      return;
+    }
+    if (isDemo) {
+      toast.info("Project deletion is disabled in demo mode.");
       return;
     }
 

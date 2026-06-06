@@ -9,11 +9,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from proposals.models import AIQualityReview, AIUsageLog, ProposalProject, ProposalVersion, UsageRecord, UserPlan
+from proposals.demo import DEMO_EMAIL, DEMO_USERNAME_PREFIX
 from proposals.services.usage_service import AIUsageService
 
 
-DEMO_EMAIL = "mirejemi896@gmail.com"
-DEMO_USERNAME_PREFIX = "demo-seed-"
 DEMO_FIRST_NAME = "Alex"
 DEMO_LAST_NAME = "Morgan"
 
@@ -462,9 +461,8 @@ class Command(BaseCommand):
         return user, created
 
     def _reset_demo_records(self, user):
-        # Local/demo safety: only delete known demo project names for this user_id, never all user projects.
-        demo_names = [project.project_name for project in DEMO_PROJECTS]
-        demo_projects = ProposalProject.objects.filter(user_id=user.get_username(), project_name__in=demo_names)
+        # Demo safety: only remove records explicitly marked as demo for this owner.
+        demo_projects = ProposalProject.objects.filter(user_id=user.get_username(), is_demo=True)
 
         AIUsageLog.objects.filter(user=user, project__in=demo_projects).delete()
         AIQualityReview.objects.filter(user=user, project__in=demo_projects).delete()
@@ -483,7 +481,7 @@ class Command(BaseCommand):
         user_plan.save(update_fields=["plan", "updated_at"])
 
         usage, _created = UsageRecord.objects.get_or_create(user=user, period=AIUsageService.current_period())
-        usage.ai_generations_used = 18
+        usage.ai_generations_used = 50
         usage.save(update_fields=["ai_generations_used", "updated_at"])
 
     def _upsert_project(self, user, data: DemoProject):

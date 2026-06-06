@@ -9,6 +9,8 @@ from django.core.cache import cache
 from rest_framework import authentication
 from rest_framework import exceptions
 
+from .demo import is_demo_user
+
 
 class SupabaseTokenAuthentication(authentication.BaseAuthentication):
     keyword = "Bearer"
@@ -114,6 +116,12 @@ class SupabaseTokenAuthentication(authentication.BaseAuthentication):
 
     def _get_or_create_user(self, *, supabase_user_id: str, email: str):
         UserModel = get_user_model()
+        normalized_email = email.strip().lower()
+        if normalized_email:
+            demo_user = UserModel.objects.filter(email__iexact=normalized_email).order_by("id").first()
+            if demo_user and is_demo_user(demo_user):
+                return demo_user
+
         user, created = UserModel.objects.get_or_create(
             username=supabase_user_id,
             defaults={"email": email},

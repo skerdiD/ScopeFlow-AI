@@ -80,7 +80,7 @@ function formatRelativeTime(dateValue: string) {
 }
 
 export function DashboardPage() {
-  const { user } = useAuth();
+  const { user, isDemo } = useAuth();
   const { pathname } = useLocation();
   const isAllProjectsView = pathname === "/projects";
 
@@ -254,6 +254,10 @@ export function DashboardPage() {
   );
 
   async function handleDelete(projectId: number) {
+    if (isDemo) {
+      toast.info("Project deletion is disabled in demo mode.");
+      return;
+    }
     try {
       setActiveDeleteId(projectId);
       await deleteProject(String(projectId));

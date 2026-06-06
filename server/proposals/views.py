@@ -11,6 +11,7 @@ from rest_framework.decorators import action, api_view, permission_classes, thro
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
+from .demo import DEMO_RESTRICTION_MESSAGE, is_demo_user
 from .models import AIQualityReview, AIUsageLog, AIPromptVersion, ProposalClientComment, ProposalProject, ProposalVersion
 from .serializers import (
     AIQualityReviewSerializer,
@@ -127,6 +128,11 @@ def get_request_user_id(request) -> str:
     if not user_id:
         raise PermissionDenied("Authenticated user identity is missing.")
     return user_id
+
+
+def deny_demo_action(request, action: str):
+    if is_demo_user(request.user):
+        raise PermissionDenied(f"{DEMO_RESTRICTION_MESSAGE} Demo users cannot {action}.")
 
 
 def snapshot_sections(project: ProposalProject) -> dict:
@@ -335,10 +341,14 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         owner_id = get_request_user_id(self.request)
-        project = serializer.save(user_id=owner_id)
+        project = serializer.save(user_id=owner_id, is_demo=is_demo_user(self.request.user))
         save_generated_proposal_snapshot(project)
         if any(getattr(project, field, "").strip() for field in SECTION_FIELDS):
             create_project_version(project, source="manual", changed_sections=SECTION_FIELDS)
+
+    def perform_destroy(self, instance):
+        deny_demo_action(self.request, "permanently delete projects")
+        super().perform_destroy(instance)
 
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop("partial", False)
@@ -420,7 +430,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
         if operation not in {"generate", "regenerate"}:
             return Response({"detail": "operation must be generate, regenerate, or disable."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if project.is_demo:
+        if project.is_demo or is_demo_user(request.user):
             return Response(
                 {"detail": "Demo projects cannot create public approval links."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -437,6 +447,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["POST"], url_path="regenerate-section", throttle_classes=[GenerateAIActionRateThrottle])
     def regenerate_section(self, request, pk=None):
+        deny_demo_action(request, "run AI generation")
         project = self.get_object()
         section = str(request.data.get("section", "")).strip().lower()
         instructions = str(request.data.get("instructions", "")).strip()
@@ -483,6 +494,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["POST"], url_path="quality-review", throttle_classes=[GenerateAIActionRateThrottle])
     def quality_review(self, request, pk=None):
+        deny_demo_action(request, "run AI quality reviews")
         project = self.get_object()
 
         try:
@@ -516,6 +528,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["POST"], url_path="edit-suggestions", throttle_classes=[GenerateAIActionRateThrottle])
     def edit_suggestions(self, request, pk=None):
+        deny_demo_action(request, "run AI edit suggestions")
         project = self.get_object()
         section = str(request.data.get("section", "")).strip().lower()
         content = str(request.data.get("content", "")).strip()
@@ -640,6 +653,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
 @permission_classes([permissions.IsAuthenticated])
 @throttle_classes([GenerateProposalRateThrottle])
 def generate_proposal(request):
+    deny_demo_action(request, "run AI proposal generation")
     owner_id = get_request_user_id(request)
     can_generate, usage_status = AIUsageService.can_generate(request.user)
     if not can_generate:
@@ -875,6 +889,7 @@ def public_proposal_comment(request, token):
 @permission_classes([permissions.IsAuthenticated])
 @throttle_classes([GenerateTemplateRateThrottle])
 def generate_template(request):
+    deny_demo_action(request, "run AI template generation")
     user_prompt = str(request.data.get("user_prompt", "")).strip()
     existing_categories = normalize_string_list(request.data.get("existing_categories", []))
 

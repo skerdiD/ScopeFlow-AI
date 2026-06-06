@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, FlaskConical } from "lucide-react";
 import { toast } from "sonner";
 import { BrandMark } from "@/components/brand/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
+import { DEMO_EMAIL, DEMO_PASSWORD } from "@/lib/demo";
 
 export function LoginPage() {
   const { signIn } = useAuth();
@@ -37,6 +38,13 @@ export function LoginPage() {
     navigate(from, { replace: true });
   }
 
+  function fillDemoCredentials() {
+    setEmail(DEMO_EMAIL);
+    setPassword(DEMO_PASSWORD);
+    setErrorMessage("");
+    toast.success("Demo credentials filled. Select Sign In to continue.");
+  }
+
   return (
     <div className="space-y-4">
       <Button asChild variant="ghost" className="h-9 px-2 text-muted-foreground hover:text-foreground">
@@ -58,9 +66,18 @@ export function LoginPage() {
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleSubmit}>
+            <Button className="w-full" size="lg" type="button" variant="outline" onClick={fillDemoCredentials}>
+              <FlaskConical className="size-4" />
+              Continue as Demo User
+            </Button>
+            <p className="text-center text-xs leading-5 text-muted-foreground">
+              Explore the app with sample projects, proposal versions, templates, usage data, and activity history.
+            </p>
+
             <div className="space-y-2">
-              <label className="text-sm font-medium">Email</label>
+              <label className="text-sm font-medium" htmlFor="login-email">Email</label>
               <Input
+                id="login-email"
                 type="email"
                 placeholder="you@example.com"
                 value={email}
@@ -71,8 +88,9 @@ export function LoginPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Password</label>
+              <label className="text-sm font-medium" htmlFor="login-password">Password</label>
               <Input
+                id="login-password"
                 type="password"
                 placeholder="Enter your password"
                 value={password}

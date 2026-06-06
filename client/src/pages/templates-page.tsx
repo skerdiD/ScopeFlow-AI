@@ -11,12 +11,14 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTemplates } from "@/hooks/use-templates";
 import { logActivity } from "@/lib/activity";
+import { useAuth } from "@/hooks/use-auth";
 import {
   type ProposalTemplate
 } from "@/lib/templates";
 
 export function TemplatesPage() {
   const navigate = useNavigate();
+  const { isDemo } = useAuth();
   const { templates, loading, duplicateTemplate, removeTemplate } = useTemplates();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -78,6 +80,11 @@ export function TemplatesPage() {
 
   async function handleDeleteTemplate() {
     if (!deleteTarget) {
+      return;
+    }
+    if (isDemo) {
+      toast.info("Template deletion is disabled in demo mode.");
+      setDeleteTarget(null);
       return;
     }
 

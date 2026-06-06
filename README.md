@@ -10,7 +10,7 @@ It helps freelancers and agencies turn rough client requirements into structured
 
 ## Demo Account
 
-Email: [[demo@scopeflow.ai](mailto:demo@scopeflow.ai)]
+Email: [demo@scopeflow.ai](mailto:demo@scopeflow.ai)
 Password: Demo123456!
 
 The demo account is public and only for exploring the app experience. It uses sample projects, proposal versions, templates, activity records, and usage data.
@@ -21,6 +21,8 @@ To seed or reset demo data locally:
 python manage.py seed_demo_data
 python manage.py seed_demo_data --reset
 ```
+
+Create `demo@scopeflow.ai` manually in Supabase Auth with the password above before using the deployed demo login. The seed command creates the matching local Django demo workspace; it does not bypass or create the Supabase Auth user.
 
 ---
 

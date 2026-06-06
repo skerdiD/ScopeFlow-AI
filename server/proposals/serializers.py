@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from .demo import is_demo_user
 from .models import AIQualityReview, ProposalClientComment, ProposalProject, ProposalVersion
 
 
@@ -171,6 +172,9 @@ class ProposalProjectSerializer(serializers.ModelSerializer):
         return obj.current_version_id
 
     def validate(self, attrs):
+        request = self.context.get("request")
+        if request and is_demo_user(request.user) and attrs.get("payment_url"):
+            raise serializers.ValidationError({"payment_url": "Payment links are disabled in demo mode."})
         return validate_project_payload(attrs)
 
 
