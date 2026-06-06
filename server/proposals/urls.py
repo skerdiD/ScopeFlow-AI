@@ -1,7 +1,16 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from .views import ProposalProjectViewSet, generate_proposal, generate_template, health_check, usage_status
+from .views import (
+    ProposalProjectViewSet,
+    generate_proposal,
+    generate_template,
+    health_check,
+    public_proposal,
+    public_proposal_comment,
+    public_proposal_response,
+    usage_status,
+)
 
 router = DefaultRouter()
 router.register("projects", ProposalProjectViewSet, basename="proposal-project")
@@ -11,6 +20,9 @@ urlpatterns = [
     path("generate/", generate_proposal),
     path("generate-template/", generate_template),
     path("usage/", usage_status),
+    path("public/proposals/<str:token>/", public_proposal),
+    path("public/proposals/<str:token>/response/", public_proposal_response),
+    path("public/proposals/<str:token>/comments/", public_proposal_comment),
     path(
         "proposals/<int:pk>/regenerate-section/",
         ProposalProjectViewSet.as_view({"post": "regenerate_section"}),

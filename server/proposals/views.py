@@ -1,16 +1,25 @@
 import logging
+import secrets
 
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
 from django.db import transaction
 from django.db.models import Max
+from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from .models import AIQualityReview, AIUsageLog, AIPromptVersion, ProposalProject, ProposalVersion
-from .serializers import AIQualityReviewSerializer, ProposalProjectListSerializer, ProposalProjectSerializer
+from .models import AIQualityReview, AIUsageLog, AIPromptVersion, ProposalClientComment, ProposalProject, ProposalVersion
+from .serializers import (
+    AIQualityReviewSerializer,
+    ProposalClientCommentSerializer,
+    ProposalProjectListSerializer,
+    ProposalProjectSerializer,
+    PublicProposalResponseSerializer,
+    PublicProposalSerializer,
+)
 from .throttling import GenerateAIActionRateThrottle, GenerateProposalRateThrottle, GenerateTemplateRateThrottle
 from .services import (
     GeminiApiKeyLeakedError,
@@ -77,6 +86,7 @@ LIST_QUERY_FIELDS = [
     "pricing",
     "risks",
     "next_steps",
+    "payment_url",
     "missing_information",
     "scope_risks",
     "unclear_requirements",
@@ -280,6 +290,7 @@ def apply_request_fields_to_project(project: ProposalProject, payload: dict) -> 
         "pricing",
         "risks",
         "next_steps",
+        "payment_url",
         "status",
     ]
 
@@ -320,7 +331,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
         if self.action == "list":
             return owner_queryset.only(*LIST_QUERY_FIELDS)
 
-        return owner_queryset.select_related("current_version").prefetch_related("versions")
+        return owner_queryset.select_related("current_version").prefetch_related("versions", "client_comments")
 
     def perform_create(self, serializer):
         owner_id = get_request_user_id(self.request)
@@ -384,7 +395,6 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         apply_request_fields_to_project(project, serializer.validated_data)
-        project.status = "completed"
         project.save()
 
         create_project_version(
@@ -395,6 +405,34 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
         )
         save_generated_proposal_snapshot(project)
 
+        return Response(ProposalProjectSerializer(project).data)
+
+    @action(detail=True, methods=["POST"], url_path="share-link")
+    def share_link(self, request, pk=None):
+        project = self.get_object()
+        operation = str(request.data.get("operation", "generate")).strip().lower()
+
+        if operation == "disable":
+            project.share_enabled = False
+            project.save(update_fields=["share_enabled", "updated_at"])
+            return Response(ProposalProjectSerializer(project).data)
+
+        if operation not in {"generate", "regenerate"}:
+            return Response({"detail": "operation must be generate, regenerate, or disable."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if project.is_demo:
+            return Response(
+                {"detail": "Demo projects cannot create public approval links."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if operation == "regenerate" or not project.share_token:
+            project.share_token = secrets.token_urlsafe(32)
+            project.share_created_at = timezone.now()
+        project.share_enabled = True
+        if project.status == "draft":
+            project.status = "sent"
+        project.save(update_fields=["share_token", "share_created_at", "share_enabled", "status", "updated_at"])
         return Response(ProposalProjectSerializer(project).data)
 
     @action(detail=True, methods=["POST"], url_path="regenerate-section", throttle_classes=[GenerateAIActionRateThrottle])
@@ -429,8 +467,7 @@ class ProposalProjectViewSet(viewsets.ModelViewSet):
             return gemini_error_response(exc, "Section regeneration")
 
         setattr(project, model_field, content)
-        project.status = "in_review"
-        project.save(update_fields=[model_field, "status", "updated_at"])
+        project.save(update_fields=[model_field, "updated_at"])
         save_generated_proposal_snapshot(project)
         create_project_version(project, source="regenerate", changed_sections=[model_field])
         AIUsageService.log_action(
@@ -741,7 +778,7 @@ def generate_proposal(request):
             budget=budget_range,
             timeline=timeline,
             requirements="\n".join(requirement_sections).strip(),
-            status="in_review",
+            status="draft",
         )
         apply_generated_proposal_to_project(project, generated)
         project.save()
@@ -763,6 +800,75 @@ def generate_proposal(request):
 @permission_classes([permissions.IsAuthenticated])
 def usage_status(request):
     return Response(AIUsageService.get_current_usage(request.user).as_dict(), status=status.HTTP_200_OK)
+
+
+def get_shared_project(token: str) -> ProposalProject:
+    return get_object_or_404(
+        ProposalProject.objects.prefetch_related("versions", "client_comments"),
+        share_token=token,
+        share_enabled=True,
+        is_demo=False,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def public_proposal(request, token):
+    project = get_shared_project(token)
+    update_fields = []
+    if project.viewed_at is None:
+        project.viewed_at = timezone.now()
+        update_fields.append("viewed_at")
+    if project.status == "sent":
+        project.status = "viewed"
+        update_fields.append("status")
+    if update_fields:
+        update_fields.append("updated_at")
+        project.save(update_fields=update_fields)
+    return Response(PublicProposalSerializer(project).data)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def public_proposal_response(request, token):
+    project = get_shared_project(token)
+    serializer = PublicProposalResponseSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    response_status = serializer.validated_data["status"]
+    now = timezone.now()
+
+    project.status = response_status
+    project.client_name_response = serializer.validated_data.get("client_name", "")
+    project.client_email_response = serializer.validated_data.get("client_email", "")
+    project.client_response_comment = serializer.validated_data.get("comment", "")
+    if response_status == "approved":
+        project.approved_at = now
+        project.rejected_at = None
+    else:
+        project.rejected_at = now
+        project.approved_at = None
+    project.save()
+
+    comment = project.client_response_comment.strip()
+    if comment:
+        ProposalClientComment.objects.create(
+            project=project,
+            client_name=project.client_name_response,
+            client_email=project.client_email_response,
+            comment=comment,
+        )
+
+    return Response(PublicProposalSerializer(project).data)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.AllowAny])
+def public_proposal_comment(request, token):
+    project = get_shared_project(token)
+    serializer = ProposalClientCommentSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    serializer.save(project=project)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["POST"])

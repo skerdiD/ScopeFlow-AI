@@ -30,6 +30,7 @@ const emptyValues = {
   pricing: "",
   risks: "",
   next_steps: "",
+  payment_url: "",
   status: "draft"
 };
 
@@ -78,6 +79,7 @@ export function ProjectForm({
       pricing: formValues.pricing,
       risks: formValues.risks,
       next_steps: formValues.next_steps,
+      payment_url: formValues.payment_url,
       missing_information: initialValues?.missing_information ?? [],
       scope_risks: initialValues?.scope_risks ?? [],
       unclear_requirements: initialValues?.unclear_requirements ?? [],
@@ -112,6 +114,7 @@ export function ProjectForm({
       pricing: formValues.pricing,
       risks: formValues.risks,
       next_steps: formValues.next_steps,
+      payment_url: formValues.payment_url,
       missing_information: initialValues?.missing_information ?? [],
       scope_risks: initialValues?.scope_risks ?? [],
       unclear_requirements: initialValues?.unclear_requirements ?? [],
@@ -163,8 +166,10 @@ export function ProjectForm({
                 onChange={(event) => setField("status", event.target.value)}
               >
                 <option value="draft">Draft</option>
-                <option value="in_review">In Review</option>
-                <option value="completed">Completed</option>
+                <option value="sent">Sent</option>
+                <option value="viewed">Viewed</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
               </select>
             </div>
           </div>
@@ -186,6 +191,16 @@ export function ProjectForm({
                 placeholder="4 to 6 weeks"
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Optional payment or deposit URL</label>
+            <Input
+              type="url"
+              value={formValues.payment_url}
+              onChange={(event) => setField("payment_url", event.target.value)}
+              placeholder="https://..."
+            />
           </div>
 
           <div className="space-y-2">

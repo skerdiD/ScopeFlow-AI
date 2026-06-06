@@ -259,7 +259,7 @@ class ProposalProjectApiTests(APITestCase):
         response = self.client.post(mark_final_url, {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_mark_final_sets_completed_and_creates_final_version_for_owner(self):
+    def test_mark_final_keeps_workflow_status_and_creates_final_version_for_owner(self):
         project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
         previous_final = ProposalVersion.objects.create(
             project=project,
@@ -293,7 +293,7 @@ class ProposalProjectApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         project.refresh_from_db()
-        self.assertEqual(project.status, "completed")
+        self.assertEqual(project.status, "draft")
         self.assertEqual(project.versions.count(), 2)
 
         previous_final.refresh_from_db()
@@ -503,7 +503,7 @@ class ProposalProjectApiTests(APITestCase):
 
         project = ProposalProject.objects.get(id=response.data["id"])
         self.assertEqual(project.user_id, self.owner.username)
-        self.assertEqual(project.status, "in_review")
+        self.assertEqual(project.status, "draft")
         self.assertEqual(project.versions.count(), 1)
         self.assertEqual(project.versions.first().source, "generate")
         usage = UsageRecord.objects.get(user=self.owner, period=AIUsageService.current_period())
@@ -809,5 +809,133 @@ class ProposalProjectApiTests(APITestCase):
 
         self._authenticate(self.other_user)
         response = self.client.post(f"/api/proposals/{project.id}/quality-review/", {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_owner_can_generate_and_disable_secure_share_link(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+        self._authenticate(self.owner)
+
+        response = self.client.post(
+            reverse("proposal-project-share-link", args=[project.id]),
+            {"operation": "generate"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["share_enabled"])
+        self.assertGreaterEqual(len(response.data["share_token"]), 40)
+        self.assertEqual(response.data["status"], "sent")
+
+        response = self.client.post(
+            reverse("proposal-project-share-link", args=[project.id]),
+            {"operation": "disable"},
+            format="json",
+        )
+        self.assertFalse(response.data["share_enabled"])
+
+    def test_wrong_user_cannot_manage_share_link(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, **self._project_payload())
+        self._authenticate(self.other_user)
+
+        response = self.client.post(
+            reverse("proposal-project-share-link", args=[project.id]),
+            {"operation": "generate"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_demo_project_cannot_generate_share_link(self):
+        project = ProposalProject.objects.create(user_id=self.owner.username, is_demo=True, **self._project_payload())
+        self._authenticate(self.owner)
+
+        response = self.client.post(
+            reverse("proposal-project-share-link", args=[project.id]),
+            {"operation": "generate"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_public_link_marks_viewed_and_exposes_only_shared_proposal(self):
+        project = ProposalProject.objects.create(
+            user_id=self.owner.username,
+            share_token="secure-token-one",
+            share_enabled=True,
+            **self._project_payload(status="sent"),
+        )
+        ProposalProject.objects.create(
+            user_id=self.owner.username,
+            share_token="secure-token-two",
+            share_enabled=True,
+            **self._project_payload(project_name="Private other proposal"),
+        )
+
+        response = self.client.get(f"/api/public/proposals/{project.share_token}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["project_name"], project.project_name)
+        self.assertNotIn("user_id", response.data)
+        self.assertNotIn("share_token", response.data)
+        project.refresh_from_db()
+        self.assertEqual(project.status, "viewed")
+        self.assertIsNotNone(project.viewed_at)
+
+    def test_public_approval_requires_confirmation_and_stores_response(self):
+        project = ProposalProject.objects.create(
+            user_id=self.owner.username,
+            share_token="secure-approval-token",
+            share_enabled=True,
+            **self._project_payload(status="viewed"),
+        )
+        url = f"/api/public/proposals/{project.share_token}/response/"
+
+        denied = self.client.post(url, {"status": "approved", "confirmed": False}, format="json")
+        self.assertEqual(denied.status_code, status.HTTP_400_BAD_REQUEST)
+
+        response = self.client.post(
+            url,
+            {
+                "status": "approved",
+                "confirmed": True,
+                "client_name": "Jamie Client",
+                "client_email": "jamie@example.com",
+                "comment": "Looks good.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        project.refresh_from_db()
+        self.assertEqual(project.status, "approved")
+        self.assertIsNotNone(project.approved_at)
+        self.assertEqual(project.client_comments.count(), 1)
+
+    def test_public_client_can_leave_multiple_comments(self):
+        project = ProposalProject.objects.create(
+            user_id=self.owner.username,
+            share_token="secure-comment-token",
+            share_enabled=True,
+            **self._project_payload(),
+        )
+        url = f"/api/public/proposals/{project.share_token}/comments/"
+
+        first = self.client.post(url, {"comment": "First question"}, format="json")
+        second = self.client.post(url, {"comment": "Second question"}, format="json")
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(project.client_comments.count(), 2)
+
+    def test_disabled_or_unknown_public_link_returns_404(self):
+        project = ProposalProject.objects.create(
+            user_id=self.owner.username,
+            share_token="disabled-token",
+            share_enabled=False,
+            **self._project_payload(),
+        )
+
+        response = self.client.get(f"/api/public/proposals/{project.share_token}/")
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

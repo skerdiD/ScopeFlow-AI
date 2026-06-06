@@ -103,7 +103,7 @@ function createSeedEvents(): ActivityEvent[] {
       projectName: "Internal CRM Rollout",
       actor: "user",
       createdAt: createTimestampHoursAgo(7),
-      metadata: { status: "completed" }
+      metadata: { status: "approved" }
     },
     {
       id: "seed_template_used_saas",
@@ -158,7 +158,7 @@ function createSeedEvents(): ActivityEvent[] {
       projectName: "Internal Admin Dashboard",
       actor: "system",
       createdAt: createTimestampHoursAgo(160),
-      metadata: { from: "draft", to: "in_review" }
+      metadata: { from: "draft", to: "sent" }
     }
   ];
 }

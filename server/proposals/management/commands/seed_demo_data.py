@@ -509,6 +509,7 @@ class Command(BaseCommand):
         return project
 
     def _project_fields(self, data: DemoProject):
+        workflow_status = "sent" if data.status == "in_review" else ("approved" if data.status == "completed" else "draft")
         return {
             "client_name": data.client_name,
             "project_type": data.project_type,
@@ -532,7 +533,10 @@ class Command(BaseCommand):
                 "Are there any fixed dates we need to protect?",
             ],
             "generated_proposal": self._generated_snapshot(data),
-            "status": data.status,
+            "status": workflow_status,
+            "is_demo": True,
+            "share_enabled": False,
+            "share_token": None,
         }
 
     def _create_versions(self, project, data: DemoProject, created_at, updated_at):
@@ -586,7 +590,7 @@ class Command(BaseCommand):
     def _seed_quality_reviews(self, user, projects):
         AIQualityReview.objects.filter(user=user, project__in=projects).delete()
         now = timezone.now()
-        review_projects = [project for project in projects if project.status in {"in_review", "completed"}][:4]
+        review_projects = [project for project in projects if project.status in {"sent", "approved"}][:4]
         for index, project in enumerate(review_projects):
             review = AIQualityReview.objects.create(
                 project=project,

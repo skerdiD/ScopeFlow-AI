@@ -70,6 +70,7 @@ export type ProposalProject = {
   pricing: string;
   risks: string;
   next_steps: string;
+  payment_url: string;
   missing_information: string[];
   scope_risks: string[];
   unclear_requirements: string[];
@@ -78,14 +79,54 @@ export type ProposalProject = {
   current_version_id: number | null;
   versions: ProposalVersion[];
   status: string;
+  share_token: string | null;
+  share_enabled: boolean;
+  share_created_at: string | null;
+  viewed_at: string | null;
+  client_name_response: string;
+  client_email_response: string;
+  client_response_comment: string;
+  approved_at: string | null;
+  rejected_at: string | null;
+  is_demo: boolean;
+  client_comments: ProposalClientComment[];
   created_at: string;
   updated_at: string;
 };
 
 export type ProposalProjectListItem = Omit<
   ProposalProject,
-  "generated_proposal" | "current_version_id" | "versions"
+  "generated_proposal" | "current_version_id" | "versions" | "share_token" | "share_enabled" | "share_created_at" | "viewed_at" | "client_name_response" | "client_email_response" | "client_response_comment" | "approved_at" | "rejected_at" | "is_demo" | "client_comments"
 >;
+
+export type ProposalClientComment = {
+  id: number;
+  client_name: string;
+  client_email: string;
+  comment: string;
+  created_at: string;
+};
+
+export type PublicProposal = {
+  project_name: string;
+  client_name: string;
+  project_type: string;
+  budget: string;
+  timeline: string;
+  status: string;
+  payment_url: string;
+  content: {
+    summary: string;
+    scope: string;
+    deliverables: string;
+    milestones: string;
+    proposal_timeline: string;
+    pricing: string;
+    risks: string;
+    next_steps: string;
+    source_label: string;
+  };
+};
 
 export type ProposalProjectPayload = {
   user_id: string;
@@ -103,6 +144,7 @@ export type ProposalProjectPayload = {
   pricing: string;
   risks: string;
   next_steps: string;
+  payment_url: string;
   missing_information: string[];
   scope_risks: string[];
   unclear_requirements: string[];
@@ -431,4 +473,46 @@ export async function markProjectFinal(
   });
 
   return handleResponse<ProposalProject>(response);
+}
+
+export async function manageProjectShareLink(
+  projectId: string,
+  operation: "generate" | "regenerate" | "disable"
+): Promise<ProposalProject> {
+  const headers = await createAuthHeaders(true);
+  const response = await fetch(`${getApiBaseUrl()}/projects/${projectId}/share-link/`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ operation })
+  });
+  return handleResponse<ProposalProject>(response);
+}
+
+export async function getPublicProposal(token: string): Promise<PublicProposal> {
+  const response = await fetch(`${getApiBaseUrl()}/public/proposals/${encodeURIComponent(token)}/`);
+  return handleResponse<PublicProposal>(response);
+}
+
+export async function respondToPublicProposal(
+  token: string,
+  payload: { status: "approved" | "rejected"; confirmed: boolean; client_name: string; client_email: string; comment: string }
+): Promise<PublicProposal> {
+  const response = await fetch(`${getApiBaseUrl()}/public/proposals/${encodeURIComponent(token)}/response/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return handleResponse<PublicProposal>(response);
+}
+
+export async function addPublicProposalComment(
+  token: string,
+  payload: { client_name: string; client_email: string; comment: string }
+): Promise<ProposalClientComment> {
+  const response = await fetch(`${getApiBaseUrl()}/public/proposals/${encodeURIComponent(token)}/comments/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return handleResponse<ProposalClientComment>(response);
 }

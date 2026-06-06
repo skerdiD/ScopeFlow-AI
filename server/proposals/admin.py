@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import AIQualityReview, AIPromptVersion, AIUsageLog, ProposalProject, UsageRecord, UserPlan
+from .models import AIQualityReview, AIPromptVersion, AIUsageLog, ProposalClientComment, ProposalProject, UsageRecord, UserPlan
 
 
 @admin.register(ProposalProject)
@@ -7,6 +7,12 @@ class ProposalProjectAdmin(admin.ModelAdmin):
     list_display = ("project_name", "client_name", "project_type", "status", "updated_at")
     search_fields = ("project_name", "client_name", "project_type", "user_id")
     list_filter = ("status", "project_type")
+
+
+@admin.register(ProposalClientComment)
+class ProposalClientCommentAdmin(admin.ModelAdmin):
+    list_display = ("project", "client_name", "client_email", "created_at")
+    search_fields = ("project__project_name", "client_name", "client_email", "comment")
 
 
 @admin.register(UserPlan)

@@ -37,14 +37,14 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 
-type StatusFilter = "all" | "draft" | "in_review" | "completed";
+type StatusFilter = "all" | "draft" | "sent" | "viewed" | "approved" | "rejected";
 type SortOption = "updated_desc" | "updated_asc" | "name_asc" | "name_desc";
 
 function getStatusVariant(status: string) {
-  if (status === "completed") {
+  if (status === "approved") {
     return "success";
   }
-  if (status === "in_review") {
+  if (status === "sent" || status === "viewed") {
     return "warning";
   }
   return "secondary";
@@ -181,8 +181,8 @@ export function DashboardPage() {
 
   const recentProjects = useMemo(() => sortedProjects.slice(0, 6), [sortedProjects]);
   const recentActivity = useMemo(() => sortedProjects.slice(0, 5), [sortedProjects]);
-  const inReviewCount = useMemo(() => projects.filter((project) => project.status === "in_review").length, [projects]);
-  const completedCount = useMemo(() => projects.filter((project) => project.status === "completed").length, [projects]);
+  const inReviewCount = useMemo(() => projects.filter((project) => ["sent", "viewed"].includes(project.status)).length, [projects]);
+  const completedCount = useMemo(() => projects.filter((project) => project.status === "approved").length, [projects]);
 
   const completionRate = useMemo(() => {
     if (projects.length === 0) {
@@ -220,7 +220,7 @@ export function DashboardPage() {
         tone: "accent" as const
       },
       {
-        label: "In Review",
+        label: "Awaiting Client",
         value: String(inReviewCount),
         description: "Ready for scope refinement and approval",
         meta:
@@ -232,7 +232,7 @@ export function DashboardPage() {
         tone: "neutral" as const
       },
       {
-        label: "Completed",
+        label: "Approved",
         value: String(completedCount),
         description: "Finalized proposals ready for handoff",
         meta: completionRate >= 60 ? "Strong delivery momentum" : "Opportunity to improve delivery pace",
@@ -288,6 +288,7 @@ export function DashboardPage() {
         pricing: project.pricing,
         risks: project.risks,
         next_steps: project.next_steps,
+        payment_url: project.payment_url,
         missing_information: project.missing_information,
         scope_risks: project.scope_risks,
         unclear_requirements: project.unclear_requirements,
@@ -382,8 +383,10 @@ export function DashboardPage() {
               >
                 <option value="all">All status</option>
                 <option value="draft">Draft</option>
-                <option value="in_review">In review</option>
-                <option value="completed">Completed</option>
+                <option value="sent">Sent</option>
+                <option value="viewed">Viewed</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
               </select>
 
               <select
@@ -581,7 +584,7 @@ export function DashboardPage() {
                 <p className="mt-1 text-lg font-semibold tracking-tight">{projects.length}</p>
               </div>
               <div className="rounded-xl border bg-background/80 px-3 py-2.5">
-                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">In Review</p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Awaiting Client</p>
                 <p className="mt-1 text-lg font-semibold tracking-tight">{inReviewCount}</p>
               </div>
               <div className="rounded-xl border bg-background/80 px-3 py-2.5">

@@ -82,8 +82,10 @@ class AIPromptVersion(models.Model):
 class ProposalProject(models.Model):
     STATUS_CHOICES = [
         ("draft", "Draft"),
-        ("in_review", "In Review"),
-        ("completed", "Completed"),
+        ("sent", "Sent"),
+        ("viewed", "Viewed"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
     ]
 
     user_id = models.CharField(max_length=255, db_index=True)
@@ -101,6 +103,7 @@ class ProposalProject(models.Model):
     pricing = models.TextField(blank=True)
     risks = models.TextField(blank=True)
     next_steps = models.TextField(blank=True)
+    payment_url = models.URLField(blank=True)
     missing_information = models.JSONField(default=list, blank=True)
     scope_risks = models.JSONField(default=list, blank=True)
     unclear_requirements = models.JSONField(default=list, blank=True)
@@ -114,6 +117,16 @@ class ProposalProject(models.Model):
         related_name="+",
     )
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default="draft")
+    share_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    share_enabled = models.BooleanField(default=False)
+    share_created_at = models.DateTimeField(null=True, blank=True)
+    viewed_at = models.DateTimeField(null=True, blank=True)
+    client_name_response = models.CharField(max_length=255, blank=True)
+    client_email_response = models.EmailField(blank=True)
+    client_response_comment = models.TextField(blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    is_demo = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -125,6 +138,20 @@ class ProposalProject(models.Model):
 
     def __str__(self):
         return self.project_name
+
+
+class ProposalClientComment(models.Model):
+    project = models.ForeignKey(ProposalProject, related_name="client_comments", on_delete=models.CASCADE)
+    client_name = models.CharField(max_length=255, blank=True)
+    client_email = models.EmailField(blank=True)
+    comment = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.project.project_name} - client comment"
 
 
 class ProposalVersion(models.Model):

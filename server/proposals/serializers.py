@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import AIQualityReview, ProposalProject, ProposalVersion
+from .models import AIQualityReview, ProposalClientComment, ProposalProject, ProposalVersion
 
 
 PROJECT_TEXT_MAX_LENGTHS = {
@@ -78,8 +78,30 @@ class ProposalVersionSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at"]
 
 
+class ProposalClientCommentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProposalClientComment
+        fields = ["id", "client_name", "client_email", "comment", "created_at"]
+        read_only_fields = ["id", "created_at"]
+        extra_kwargs = {"comment": {"max_length": 8000}}
+
+
+class PublicProposalResponseSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=["approved", "rejected"])
+    confirmed = serializers.BooleanField(default=False)
+    client_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    client_email = serializers.EmailField(required=False, allow_blank=True)
+    comment = serializers.CharField(max_length=8000, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if attrs["status"] == "approved" and not attrs.get("confirmed"):
+            raise serializers.ValidationError({"confirmed": "Approval confirmation is required."})
+        return attrs
+
+
 class ProposalProjectSerializer(serializers.ModelSerializer):
     versions = ProposalVersionSerializer(many=True, read_only=True)
+    client_comments = ProposalClientCommentSerializer(many=True, read_only=True)
     current_version_id = serializers.SerializerMethodField()
 
     class Meta:
@@ -101,6 +123,7 @@ class ProposalProjectSerializer(serializers.ModelSerializer):
             "pricing",
             "risks",
             "next_steps",
+            "payment_url",
             "missing_information",
             "scope_risks",
             "unclear_requirements",
@@ -109,6 +132,17 @@ class ProposalProjectSerializer(serializers.ModelSerializer):
             "current_version_id",
             "versions",
             "status",
+            "share_token",
+            "share_enabled",
+            "share_created_at",
+            "viewed_at",
+            "client_name_response",
+            "client_email_response",
+            "client_response_comment",
+            "approved_at",
+            "rejected_at",
+            "is_demo",
+            "client_comments",
             "created_at",
             "updated_at",
         ]
@@ -120,6 +154,17 @@ class ProposalProjectSerializer(serializers.ModelSerializer):
             "versions",
             "current_version_id",
             "generated_proposal",
+            "share_token",
+            "share_enabled",
+            "share_created_at",
+            "viewed_at",
+            "client_name_response",
+            "client_email_response",
+            "client_response_comment",
+            "approved_at",
+            "rejected_at",
+            "is_demo",
+            "client_comments",
         ]
 
     def get_current_version_id(self, obj):
@@ -149,6 +194,7 @@ class ProposalProjectListSerializer(serializers.ModelSerializer):
             "pricing",
             "risks",
             "next_steps",
+            "payment_url",
             "missing_information",
             "scope_risks",
             "unclear_requirements",
@@ -166,6 +212,38 @@ class ProposalProjectListSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         return validate_project_payload(attrs)
+
+
+class PublicProposalSerializer(serializers.ModelSerializer):
+    content = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProposalProject
+        fields = [
+            "project_name",
+            "client_name",
+            "project_type",
+            "budget",
+            "timeline",
+            "status",
+            "payment_url",
+            "content",
+        ]
+
+    def get_content(self, obj):
+        final_version = obj.versions.filter(is_final=True).order_by("-created_at").first()
+        source = final_version or obj
+        return {
+            "summary": source.summary,
+            "scope": source.scope,
+            "deliverables": source.deliverables,
+            "milestones": source.milestones,
+            "proposal_timeline": source.proposal_timeline,
+            "pricing": source.pricing,
+            "risks": source.risks,
+            "next_steps": source.next_steps,
+            "source_label": final_version.label if final_version else "current",
+        }
 
 
 class AIQualityReviewSerializer(serializers.ModelSerializer):

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Clock3, Download, FileText, RefreshCcw, Save, Sparkles, Star, Trash2, WandSparkles } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, Copy, Download, FileText, Link2, Mail, MessageSquare, RefreshCcw, Save, Sparkles, Star, Trash2, WandSparkles, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectForm } from "@/components/project/project-form";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import {
   getEditSuggestions,
   getProject,
   markProjectFinal,
+  manageProjectShareLink,
   regenerateProposalSection,
   reviewProposalQuality,
   restoreProjectVersion,
@@ -143,6 +144,7 @@ export function ProjectDetailsPage() {
   const [regeneratingSection, setRegeneratingSection] = useState<ProposalSectionKey | null>(null);
   const [suggestingSection, setSuggestingSection] = useState<ProposalSectionKey | null>(null);
   const [reviewingQuality, setReviewingQuality] = useState(false);
+  const [managingShareLink, setManagingShareLink] = useState(false);
   const [qualityReview, setQualityReview] = useState<AIQualityReview | null>(null);
   const [editSuggestions, setEditSuggestions] = useState<Partial<Record<ProposalSectionKey, EditSuggestionsResponse>>>({});
   const [regenerationInstructions, setRegenerationInstructions] = useState<Partial<Record<ProposalSectionKey, string>>>({});
@@ -318,11 +320,11 @@ export function ProjectDetailsPage() {
   }, [project]);
 
   function getStatusVariant(status: string) {
-    if (status === "completed") {
+    if (status === "approved") {
       return "success";
     }
 
-    if (status === "in_review") {
+    if (status === "sent" || status === "viewed") {
       return "warning";
     }
 
@@ -361,6 +363,7 @@ export function ProjectDetailsPage() {
       pricing: sectionDrafts.pricing,
       risks: sectionDrafts.risks,
       next_steps: sectionDrafts.next_steps,
+      payment_url: coreDraft?.payment_url ?? project.payment_url,
       missing_information: project.missing_information ?? [],
       scope_risks: project.scope_risks ?? [],
       unclear_requirements: project.unclear_requirements ?? [],
@@ -665,7 +668,7 @@ export function ProjectDetailsPage() {
 
     try {
       setMarkingFinal(true);
-      const updated = await markProjectFinal(id, buildPayload({ status: "completed" }));
+      const updated = await markProjectFinal(id, buildPayload());
       setProject(updated);
       setSelectedVersionId(updated.current_version_id);
       setProjectSaveState("Marked final");
@@ -793,6 +796,40 @@ export function ProjectDetailsPage() {
     }
   }
 
+  function getClientLink() {
+    return project?.share_token ? `${window.location.origin}/proposal/${project.share_token}` : "";
+  }
+
+  async function handleManageShareLink(operation: "generate" | "regenerate" | "disable") {
+    if (!id) {
+      return;
+    }
+    try {
+      setManagingShareLink(true);
+      const updated = await manageProjectShareLink(id, operation);
+      setProject(updated);
+      toast.success(operation === "disable" ? "Client link disabled." : "Client approval link ready.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to manage client link.");
+    } finally {
+      setManagingShareLink(false);
+    }
+  }
+
+  async function handleCopyClientLink() {
+    await navigator.clipboard.writeText(getClientLink());
+    toast.success("Client approval link copied.");
+  }
+
+  async function handleCopyEmailMessage() {
+    if (!project) {
+      return;
+    }
+    const message = `Hi ${project.client_name},\n\nPlease review the proposal for ${project.project_name} and leave your approval or feedback here:\n${getClientLink()}\n\nThank you.`;
+    await navigator.clipboard.writeText(message);
+    toast.success("Email message copied.");
+  }
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -868,6 +905,57 @@ export function ProjectDetailsPage() {
       </div>
 
       {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
+
+      <Card className="border-border/70 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Link2 className="size-5 text-primary" />
+            Client Approval
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Share a secure proposal link and review client approval, rejection, and comments.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {project.is_demo ? (
+            <p className="rounded-xl border bg-secondary/40 p-3 text-sm text-muted-foreground">
+              Demo projects cannot create permanent public links.
+            </p>
+          ) : project.share_enabled && project.share_token ? (
+            <div className="space-y-3">
+              <Input value={getClientLink()} readOnly />
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={handleCopyClientLink}><Copy className="size-4" />Copy link</Button>
+                <Button variant="outline" onClick={handleCopyEmailMessage}><Mail className="size-4" />Copy email message</Button>
+                <Button variant="outline" onClick={() => handleManageShareLink("regenerate")} disabled={managingShareLink}><RefreshCcw className="size-4" />Regenerate</Button>
+                <Button variant="outline" onClick={() => handleManageShareLink("disable")} disabled={managingShareLink}><XCircle className="size-4" />Disable</Button>
+              </div>
+            </div>
+          ) : (
+            <Button onClick={() => handleManageShareLink("generate")} disabled={managingShareLink || project.is_demo}>
+              <Link2 className="size-4" />Generate client link
+            </Button>
+          )}
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Status</p><p className="mt-1 font-medium capitalize">{project.status}</p></div>
+            <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Viewed</p><p className="mt-1 font-medium">{project.viewed_at ? new Date(project.viewed_at).toLocaleString() : "Not yet"}</p></div>
+            <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Client response</p><p className="mt-1 font-medium">{project.client_name_response || project.client_email_response || "Not yet"}</p></div>
+          </div>
+
+          {project.client_comments.length > 0 ? (
+            <div className="space-y-2">
+              <p className="flex items-center gap-2 font-medium"><MessageSquare className="size-4" />Client comments</p>
+              {project.client_comments.map((comment) => (
+                <div key={comment.id} className="rounded-xl border bg-background/60 p-3 text-sm">
+                  <p className="whitespace-pre-wrap">{comment.comment}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">{comment.client_name || comment.client_email || "Client"} - {new Date(comment.created_at).toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card className="border-border/70 shadow-sm">
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
