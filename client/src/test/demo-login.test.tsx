@@ -8,12 +8,12 @@ import { DEMO_EMAIL, DEMO_PASSWORD } from "@/lib/demo";
 
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
-    signIn: vi.fn(),
+    signIn: vi.fn().mockResolvedValue({ error: null }),
   }),
 }));
 
 describe("demo login access", () => {
-  it("shows the demo option and fills the published credentials", async () => {
+  it("shows the demo option and signs in with the published credentials", async () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>

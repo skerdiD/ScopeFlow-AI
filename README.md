@@ -22,7 +22,12 @@ python manage.py seed_demo_data
 python manage.py seed_demo_data --reset
 ```
 
-Create `demo@scopeflow.ai` manually in Supabase Auth with the password above before using the deployed demo login. The seed command creates the matching local Django demo workspace; it does not bypass or create the Supabase Auth user.
+Before using the deployed demo login:
+
+1. Create and confirm `demo@scopeflow.ai` in Supabase Auth with the password above.
+2. Run `python manage.py seed_demo_data --reset` against the deployed database.
+
+The seed command creates the matching Django demo workspace; it does not bypass or create the Supabase Auth user.
 
 ---
 

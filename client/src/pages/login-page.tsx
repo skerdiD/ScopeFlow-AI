@@ -19,6 +19,7 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,11 +39,28 @@ export function LoginPage() {
     navigate(from, { replace: true });
   }
 
-  function fillDemoCredentials() {
+  async function handleDemoSignIn() {
     setEmail(DEMO_EMAIL);
     setPassword(DEMO_PASSWORD);
     setErrorMessage("");
-    toast.success("Demo credentials filled. Select Sign In to continue.");
+    setDemoLoading(true);
+
+    const { error } = await signIn(DEMO_EMAIL, DEMO_PASSWORD);
+    if (error) {
+      const normalizedError = error.toLowerCase();
+      const message = normalizedError.includes("email not confirmed")
+        ? "The demo account exists, but its email must be confirmed in Supabase Auth before visitors can sign in."
+        : normalizedError.includes("invalid login credentials")
+          ? "The demo account is not provisioned in Supabase Auth yet. Create or reset demo@scopeflow.ai, then try again."
+          : error;
+      setErrorMessage(message);
+      toast.error(message);
+      setDemoLoading(false);
+      return;
+    }
+
+    toast.success("Welcome to the demo workspace.");
+    navigate(from, { replace: true });
   }
 
   return (
@@ -66,9 +84,9 @@ export function LoginPage() {
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleSubmit}>
-            <Button className="w-full" size="lg" type="button" variant="outline" onClick={fillDemoCredentials}>
+            <Button className="w-full" size="lg" type="button" variant="outline" onClick={handleDemoSignIn} disabled={loading || demoLoading}>
               <FlaskConical className="size-4" />
-              Continue as Demo User
+              {demoLoading ? "Opening Demo..." : "Continue as Demo User"}
             </Button>
             <p className="text-center text-xs leading-5 text-muted-foreground">
               Explore the app with sample projects, proposal versions, templates, usage data, and activity history.
@@ -106,7 +124,7 @@ export function LoginPage() {
               </div>
             ) : null}
 
-            <Button className="w-full" size="lg" type="submit" disabled={loading}>
+            <Button className="w-full" size="lg" type="submit" disabled={loading || demoLoading}>
               {loading ? "Signing in..." : "Sign In"}
               {!loading ? <ArrowRight className="size-4" /> : null}
             </Button>
