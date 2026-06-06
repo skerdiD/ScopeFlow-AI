@@ -206,6 +206,11 @@ export type UsageStatus = {
   period: string;
 };
 
+export type WorkspaceOverview = {
+  projects: ProposalProjectListItem[];
+  usage: UsageStatus;
+};
+
 export class ApiError extends Error {
   status: number;
   data: unknown;
@@ -316,6 +321,12 @@ export async function getUsageStatus(): Promise<UsageStatus> {
   const headers = await createAuthHeaders();
   const response = await fetch(`${getApiBaseUrl()}/usage/`, { headers });
   return handleResponse<UsageStatus>(response);
+}
+
+export async function getWorkspaceOverview(): Promise<WorkspaceOverview> {
+  const headers = await createAuthHeaders();
+  const response = await fetch(`${getApiBaseUrl()}/workspace/`, { headers });
+  return handleResponse<WorkspaceOverview>(response);
 }
 
 export async function updateProject(id: string, payload: ProposalProjectPayload): Promise<ProposalProject> {

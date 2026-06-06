@@ -28,6 +28,7 @@ Before using the deployed demo login:
 2. Run `python manage.py seed_demo_data --reset` against the deployed database.
 
 The seed command creates the matching Django demo workspace; it does not bypass or create the Supabase Auth user.
+The backend also verifies the workspace after demo authentication and automatically repairs missing projects, plan, or current-period usage data in the database serving the API.
 
 ---
 

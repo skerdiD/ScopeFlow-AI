@@ -93,6 +93,19 @@ class ProposalProjectApiTests(APITestCase):
         self.assertEqual(response.data[0]["project_name"], "Owner Project")
         self.assertEqual(response.data[0]["user_id"], self.owner.username)
 
+    def test_workspace_overview_returns_projects_and_usage_together(self):
+        ProposalProject.objects.create(
+            user_id=self.owner.username,
+            **self._project_payload(project_name="Workspace Project"),
+        )
+
+        self._authenticate(self.owner)
+        response = self.client.get("/api/workspace/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["projects"][0]["project_name"], "Workspace Project")
+        self.assertEqual(response.data["usage"]["plan"], UserPlan.PLAN_FREE)
+
     def test_create_project_uses_authenticated_owner_identity(self):
         self._authenticate(self.owner)
         response = self.client.post(

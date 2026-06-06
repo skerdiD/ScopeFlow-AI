@@ -10,8 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { logActivity } from "@/lib/activity";
 import { getTemplateById, mapTemplateToIntakePrefill } from "@/lib/templates";
+import { useAuth } from "@/hooks/use-auth";
 
 export function NewProjectPage() {
+  const { isDemo } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -72,6 +74,13 @@ export function NewProjectPage() {
   }
 
   async function handleGenerateProposal(payload: GenerateProposalPayload) {
+    if (isDemo) {
+      const message = "AI generation is disabled in demo mode. Explore the sample proposals to preview generated results.";
+      setErrorMessage(message);
+      toast.info(message);
+      return;
+    }
+
     if (usage && !usage.is_unlimited && usage.remaining === 0) {
       const message = "You have reached your monthly AI generation limit. Upgrade to generate more proposals.";
       setErrorMessage(message);

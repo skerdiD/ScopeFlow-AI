@@ -9,7 +9,7 @@ from django.core.cache import cache
 from rest_framework import authentication
 from rest_framework import exceptions
 
-from .demo import is_demo_user
+from .demo import ensure_demo_workspace, is_demo_user
 
 
 class SupabaseTokenAuthentication(authentication.BaseAuthentication):
@@ -49,6 +49,7 @@ class SupabaseTokenAuthentication(authentication.BaseAuthentication):
             supabase_user_id=supabase_user_id,
             email=str(user_payload.get("email", "")).strip(),
         )
+        ensure_demo_workspace(user)
         return user, user_payload
 
     def authenticate_header(self, request):

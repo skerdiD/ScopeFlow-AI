@@ -816,6 +816,24 @@ def usage_status(request):
     return Response(AIUsageService.get_current_usage(request.user).as_dict(), status=status.HTTP_200_OK)
 
 
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def workspace_overview(request):
+    owner_id = get_request_user_id(request)
+    projects = (
+        ProposalProject.objects.filter(user_id=owner_id)
+        .order_by("-updated_at")
+        .only(*LIST_QUERY_FIELDS)
+    )
+    return Response(
+        {
+            "projects": ProposalProjectListSerializer(projects, many=True).data,
+            "usage": AIUsageService.get_current_usage(request.user).as_dict(),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
 def get_shared_project(token: str) -> ProposalProject:
     return get_object_or_404(
         ProposalProject.objects.prefetch_related("versions", "client_comments"),

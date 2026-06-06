@@ -29,7 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   createProject,
   deleteProject,
-  getUsageStatus,
+  getWorkspaceOverview,
   getProjects,
   type ProposalProjectListItem,
   type ProposalProjectPayload,
@@ -117,31 +117,33 @@ export function DashboardPage() {
     }
   }, [user?.id]);
 
-  const loadUsage = useCallback(async () => {
+  const loadWorkspace = useCallback(async () => {
     if (!user?.id) {
       return;
     }
 
     try {
+      setLoading(true);
       setUsageLoading(true);
-      const data = await getUsageStatus();
-      setUsage(data);
+      const data = await getWorkspaceOverview();
+      setProjects(data.projects);
+      setUsage(data.usage);
+      setErrorMessage("");
       setUsageErrorMessage("");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to fetch usage.";
+      const message = error instanceof Error ? error.message : "Failed to fetch workspace.";
+      setErrorMessage(message);
       setUsageErrorMessage(message);
+      toast.error(message);
     } finally {
+      setLoading(false);
       setUsageLoading(false);
     }
   }, [user?.id]);
 
   useEffect(() => {
-    void loadProjects();
-  }, [loadProjects]);
-
-  useEffect(() => {
-    void loadUsage();
-  }, [loadUsage]);
+    void loadWorkspace();
+  }, [loadWorkspace]);
 
   const sortedProjects = useMemo(() => {
     return [...projects].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/hooks/use-auth";
 import type { UsageStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -19,9 +20,14 @@ function formatPlan(plan: string) {
 }
 
 export function UsageCard({ usage, loading = false, errorMessage = "", compact = false }: UsageCardProps) {
-  const isAtLimit = Boolean(usage && !usage.is_unlimited && usage.remaining === 0);
-  const isCloseToLimit = Boolean(usage && !usage.is_unlimited && usage.remaining !== null && usage.remaining <= 1 && usage.remaining > 0);
-  const usageLabel = usage?.is_unlimited ? `${usage.used} AI generations used this month` : `${usage?.used ?? 0} / ${usage?.limit ?? 0} AI generations used this month`;
+  const { isDemo } = useAuth();
+  const isAtLimit = Boolean(!isDemo && usage && !usage.is_unlimited && usage.remaining === 0);
+  const isCloseToLimit = Boolean(!isDemo && usage && !usage.is_unlimited && usage.remaining !== null && usage.remaining <= 1 && usage.remaining > 0);
+  const usageLabel = isDemo
+    ? `${usage?.used ?? 0} sample AI generations this month`
+    : usage?.is_unlimited
+      ? `${usage.used} AI generations used this month`
+      : `${usage?.used ?? 0} / ${usage?.limit ?? 0} AI generations used this month`;
 
   return (
     <Card className={cn("border-border/70 shadow-sm", isAtLimit ? "border-destructive/40 bg-destructive/5" : "")}>
@@ -71,7 +77,11 @@ export function UsageCard({ usage, loading = false, errorMessage = "", compact =
               )}
             </div>
 
-            {isAtLimit ? (
+            {isDemo ? (
+              <p className="text-sm text-muted-foreground">
+                Sample usage data is shown for this read-only demo workspace.
+              </p>
+            ) : isAtLimit ? (
               <div className="flex items-start gap-2 rounded-xl border border-destructive/20 bg-background/80 p-3 text-sm">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
                 <p>You have reached your monthly AI generation limit. Upgrade to generate more proposals.</p>
@@ -86,12 +96,14 @@ export function UsageCard({ usage, loading = false, errorMessage = "", compact =
               </p>
             )}
 
-            <Button asChild variant="outline" size="sm" className="w-full">
-              <Link to="/billing">
-                View Plans
-                <ArrowUpRight className="size-4" />
-              </Link>
-            </Button>
+            {!isDemo ? (
+              <Button asChild variant="outline" size="sm" className="w-full">
+                <Link to="/billing">
+                  View Plans
+                  <ArrowUpRight className="size-4" />
+                </Link>
+              </Button>
+            ) : null}
           </>
         ) : null}
       </CardContent>
