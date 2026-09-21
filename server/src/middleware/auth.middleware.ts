@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { env } from "../config/env.js";
 import { ApiError } from "./error.middleware.js";
 import { prisma } from "../lib/prisma.js";
+import { ensureDemoWorkspace } from "../services/demo.service.js";
 
 type CacheEntry = {
   expiresAt: number;
@@ -120,6 +121,7 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
 
     const email = String(supabaseUser.email ?? "").trim();
     const djangoUser = await getOrCreateDjangoUser(supabaseUserId, email);
+    await ensureDemoWorkspace(djangoUser);
 
     req.supabaseUser = supabaseUser;
     req.authUser = {

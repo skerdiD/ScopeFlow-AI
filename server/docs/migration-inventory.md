@@ -92,7 +92,7 @@ Development: `typescript`, `tsx`, `prisma`, `vitest`, `supertest`, `@types/*`.
 
 ## Risks / Compatibility Notes
 
-- The foundation stage intentionally returns `501` for unported non-health endpoints. Prompt 2 must port service behavior before switching production traffic.
+- All inventoried endpoints are now implemented in Express; no migration-placeholder routes remain.
 - Prisma maps Django `BigAutoField` IDs as `BigInt`; controllers must serialize IDs back as numbers/strings compatible with the existing frontend.
 - Django `auth_user` is still part of the live schema because plans, usage, and AI logs reference it. The Express backend must keep this mirror unless a separate data migration is designed.
 - Gemini normalization/fallback behavior is large and must be ported carefully from `gemini_service.py`.
@@ -115,11 +115,23 @@ Database introspection was attempted with `prisma db pull` against a temporary s
 
 Templates and activity have no Django database models or CRUD endpoints: they remain frontend local-storage features. `/api/generate-template/` is a Gemini generation endpoint rather than template persistence.
 
-## Remaining For Prompt 3
+## Prompt 3 Remaining-Functionality Checklist
 
-- Port Gemini proposal generation, template draft generation, section regeneration, quality review, edit suggestions, prompt selection, token accounting, and AI usage logs.
-- Port PDF/DOCX exports and preserve download headers and version selectors.
-- Port the demo seed command and login-time demo workspace self-healing; demo authorization restrictions are already enforced for migrated writes.
-- Add throttling parity for AI routes.
-- Repeat live Prisma introspection and database smoke queries with a working `DATABASE_URL`.
-- Switch deployment traffic only after the remaining `501` routes are implemented and end-to-end tested.
+- [x] Gemini REST integration using server-only `GEMINI_API_KEY` and configurable `GEMINI_MODEL`.
+- [x] JSON fence/wrapper extraction, structured normalization, bounded lists, and deterministic proposal/template fallbacks.
+- [x] Active database prompt-version lookup and placeholder rendering.
+- [x] Full proposal generation with a preflight limit check, post-AI atomic consumption, project/version persistence, and AI usage logs.
+- [x] Owner-scoped section regeneration with snapshot/version creation.
+- [x] Persisted quality reviews and non-mutating edit suggestions.
+- [x] Monthly free/pro/business usage limits with conditional atomic increments.
+- [x] DOCX and PDF export with current, selected, and final version support.
+- [x] Idempotent ten-project demo seed, narrowly scoped reset, Pro usage state, AI logs, quality reviews, and login-time repair.
+- [x] General and AI-specific request throttling.
+- [x] TypeScript tests covering auth, ownership, CRUD, versions, Gemini parsing, generation/review contracts, usage limits, exports, templates, and demo seeding.
+- [x] Confirm activity and template CRUD are frontend local-storage behavior and require no backend persistence model.
+
+## Remaining Before Prompt 4 Cutover
+
+- Repeat live Prisma introspection and authenticated database/API smoke queries with a current `DATABASE_URL`; the configured Supabase pooler currently rejects its tenant/user.
+- Run real authenticated browser flows and a real Gemini call with valid external credentials. Automated tests mock Gemini and do not expose or consume the API key.
+- Remove the retained Django reference implementation, update deployment/CI/README technology references, and perform the final cutover only under Prompt 4.

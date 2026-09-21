@@ -61,7 +61,7 @@ async function ownedProject(db: Transaction | typeof prisma, projectId: bigint, 
   return project;
 }
 
-async function createVersion(
+export async function createProjectVersion(
   tx: Transaction,
   project: Awaited<ReturnType<typeof ownedProject>>,
   source: string,
@@ -127,7 +127,7 @@ export async function createProject(ownerId: string, input: ProjectInput, isDemo
       }
     });
     if (SECTION_FIELDS.some((field) => String(project[field] ?? "").trim())) {
-      await createVersion(tx, project, "manual", SECTION_FIELDS);
+      await createProjectVersion(tx, project, "manual", SECTION_FIELDS);
     }
     return tx.proposalProject.findUniqueOrThrow({ where: { id: project.id }, include: detailInclude });
   });
@@ -138,7 +138,7 @@ export async function updateProject(ownerId: string, projectId: bigint, input: P
     const before = await ownedProject(tx, projectId, ownerId);
     const updated = await tx.proposalProject.update({ where: { id: before.id }, data: toProjectData(input) });
     const changed = SECTION_FIELDS.filter((field) => before[field] !== updated[field]);
-    if (changed.length) await createVersion(tx, updated, "manual", changed);
+    if (changed.length) await createProjectVersion(tx, updated, "manual", changed);
     await tx.proposalProject.update({
       where: { id: updated.id },
       data: { generatedProposal: json(buildGeneratedProposalSnapshot(updated)) }
@@ -180,7 +180,7 @@ export async function markFinal(ownerId: string, projectId: bigint, input: Proje
       if (key in normalized) normalized[key] = normalizeStringList(normalized[key]);
     }
     const updated = await tx.proposalProject.update({ where: { id: project.id }, data: toProjectData(normalized) });
-    await createVersion(tx, updated, "final", SECTION_FIELDS, true);
+    await createProjectVersion(tx, updated, "final", SECTION_FIELDS, true);
     await tx.proposalProject.update({
       where: { id: project.id },
       data: { generatedProposal: json(buildGeneratedProposalSnapshot(updated)) }

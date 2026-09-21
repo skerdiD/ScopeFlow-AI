@@ -36,6 +36,11 @@ const rawEnvSchema = z.object({
   VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY: z.string().optional(),
   SUPABASE_AUTH_CACHE_TTL: z.coerce.number().int().min(0).default(30),
   JSON_BODY_LIMIT: z.string().default("1mb"),
+  RATE_LIMIT_ANON: z.string().default("120/min"),
+  RATE_LIMIT_USER: z.string().default("600/min"),
+  RATE_LIMIT_GENERATE_PROPOSAL: z.string().default("30/hour"),
+  RATE_LIMIT_GENERATE_TEMPLATE: z.string().default("30/hour"),
+  RATE_LIMIT_GENERATE_AI_ACTION: z.string().default("60/hour"),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
   DEMO_ACCOUNT_EMAIL: z.string().email().default("demo@scopeflow.ai")

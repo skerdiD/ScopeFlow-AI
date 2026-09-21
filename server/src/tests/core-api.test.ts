@@ -11,7 +11,12 @@ const serviceMocks = vi.hoisted(() => ({
   restoreVersion: vi.fn(),
   markFinal: vi.fn(),
   manageShareLink: vi.fn(),
-  getCurrentUsage: vi.fn()
+  getCurrentUsage: vi.fn(),
+  generateTemplateDraft: vi.fn(),
+  generateProposal: vi.fn(),
+  regenerateSection: vi.fn(),
+  reviewQuality: vi.fn(),
+  suggestEdits: vi.fn()
 }));
 
 vi.mock("../middleware/auth.middleware.js", () => ({
@@ -32,6 +37,16 @@ vi.mock("../services/project.service.js", async () => ({
   detailInclude: { versions: true, clientComments: true }
 }));
 vi.mock("../services/usage.service.js", () => ({ getCurrentUsage: serviceMocks.getCurrentUsage }));
+vi.mock("../services/gemini.service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/gemini.service.js")>()),
+  generateTemplateDraft: serviceMocks.generateTemplateDraft
+}));
+vi.mock("../services/ai-workflow.service.js", () => ({
+  generateProposal: serviceMocks.generateProposal,
+  regenerateSection: serviceMocks.regenerateSection,
+  reviewQuality: serviceMocks.reviewQuality,
+  suggestEdits: serviceMocks.suggestEdits
+}));
 
 import { createApp } from "../app.js";
 
@@ -100,6 +115,22 @@ describe("core project API contract", () => {
     serviceMocks.getCurrentUsage.mockResolvedValue({
       plan: "free", used: 1, limit: 3, remaining: 2, is_unlimited: false, period: "2026-09"
     });
+    serviceMocks.generateTemplateDraft.mockResolvedValue({
+      name: "SaaS Template",
+      description: "For SaaS projects.",
+      category: "SaaS",
+      sections: {}
+    });
+    serviceMocks.generateProposal.mockResolvedValue(project);
+    serviceMocks.regenerateSection.mockResolvedValue(project);
+    serviceMocks.reviewQuality.mockResolvedValue({
+      id: 30n, projectId: 12n, proposalVersionId: 21n, score: 82,
+      summary: "Strong proposal.", strengths: ["Clear scope"], weaknesses: ["Pricing"],
+      recommendations: ["Clarify pricing"], createdAt: now
+    });
+    serviceMocks.suggestEdits.mockResolvedValue({
+      summary: "Clear but can improve.", suggestions: [{ type: "clarity", message: "Add specifics." }], improved_example: "Improved."
+    });
   });
 
   it("lists projects using only the authenticated owner", async () => {
@@ -148,9 +179,35 @@ describe("core project API contract", () => {
     expect(workspace.body.usage.used).toBe(1);
   });
 
-  it("keeps template draft generation authenticated while Gemini remains isolated", async () => {
+  it("returns generated template drafts through the existing contract", async () => {
     const response = await request(app).post("/api/generate-template/").send({ user_prompt: "SaaS template" });
-    expect(response.status).toBe(501);
-    expect(response.body.detail).toContain("not been ported");
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ name: "SaaS Template", category: "SaaS" });
+  });
+
+  it("ports proposal generation and AI review response shapes", async () => {
+    const generated = await request(app).post("/api/generate/").send({
+      client_name: "Acme", business_type: "SaaS", project_goals: "Improve onboarding",
+      required_features: "Auth, analytics", budget_range: "$10k", timeline: "6 weeks", call_notes: ""
+    });
+    const reviewed = await request(app).post("/api/proposals/12/quality-review/").send({});
+    expect(generated.status).toBe(201);
+    expect(generated.body.user_id).toBe("supabase-owner-id");
+    expect(reviewed.body).toMatchObject({ id: 30, project: 12, proposal_version: 21, score: 82 });
+  });
+
+  it("exports owned projects with download headers", async () => {
+    const response = await request(app).get("/api/projects/12/export/?file_type=pdf");
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toContain("application/pdf");
+    expect(response.headers["content-disposition"]).toMatch(/attachment; filename="website-current-\d{8}\.pdf"/);
+    expect(serviceMocks.getProject).toHaveBeenCalledWith("supabase-owner-id", 12n);
+  });
+
+  it("validates export format and final-version selection", async () => {
+    expect((await request(app).get("/api/projects/12/export/?file_type=txt")).status).toBe(400);
+    const finalResponse = await request(app).get("/api/projects/12/export/?file_type=docx&final_version=true");
+    expect(finalResponse.status).toBe(404);
+    expect(finalResponse.body.detail).toBe("Final version not found for this project.");
   });
 });

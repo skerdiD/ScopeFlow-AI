@@ -4,6 +4,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import { env } from "./config/env.js";
 import { errorMiddleware, notFoundMiddleware } from "./middleware/error.middleware.js";
+import { generalRateLimiter } from "./middleware/rate-limit.middleware.js";
 import { apiRouter } from "./routes/index.js";
 
 export function createApp() {
@@ -25,6 +26,7 @@ export function createApp() {
   );
   app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
   app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
+  app.use(generalRateLimiter);
 
   app.use(env.API_PREFIX, apiRouter);
   app.use(notFoundMiddleware);

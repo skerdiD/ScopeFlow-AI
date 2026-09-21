@@ -11,7 +11,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run src",
     "prisma:generate": "prisma generate",
-    "prisma:pull": "prisma db pull"
+    "prisma:pull": "prisma db pull",
+    "seed:demo": "tsx prisma/seed.ts",
+    "seed:demo:reset": "tsx prisma/seed.ts --reset"
   },
   "keywords": [
     "scopeflow",
@@ -39,6 +41,7 @@
     "docx": "^9.7.1",
     "dotenv": "^18.0.1",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
     "morgan": "^1.12.1",
     "pdfkit": "^0.20.2",

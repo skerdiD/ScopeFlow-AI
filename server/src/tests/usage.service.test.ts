@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getCurrentUsage } from "../services/usage.service.js";
+import { consumeGeneration, getCurrentUsage } from "../services/usage.service.js";
 
 describe("usage service", () => {
   it("returns the current period and remaining free allowance", async () => {
@@ -27,5 +27,25 @@ describe("usage service", () => {
       remaining: null,
       is_unlimited: true
     });
+  });
+
+  it("uses an atomic conditional increment at the free-plan limit", async () => {
+    const tx = {
+      userPlan: { upsert: vi.fn().mockResolvedValue({ plan: "free" }) },
+      usageRecord: {
+        upsert: vi.fn().mockResolvedValue({ id: 10n, aiGenerationsUsed: 3 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 10n, aiGenerationsUsed: 3 })
+      }
+    };
+
+    const result = await consumeGeneration(7, tx as never);
+
+    expect(result.consumed).toBe(false);
+    expect(result.status.remaining).toBe(0);
+    expect(tx.usageRecord.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 10n, aiGenerationsUsed: { lt: 3 } },
+      data: { aiGenerationsUsed: { increment: 1 } }
+    }));
   });
 });

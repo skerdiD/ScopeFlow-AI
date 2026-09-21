@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { migrationPlaceholder } from "../controllers/migration-placeholder.controller.js";
+import { exportProjectController } from "../controllers/export.controller.js";
 import {
   createProjectController,
   deleteProjectController,
@@ -28,4 +28,4 @@ projectsRouter.post(
 );
 projectsRouter.post(["/projects/:id/mark-final", "/projects/:id/mark-final/"], requireAuth, asyncHandler(markFinalController));
 projectsRouter.post(["/projects/:id/share-link", "/projects/:id/share-link/"], requireAuth, asyncHandler(shareLinkController));
-projectsRouter.get(["/projects/:id/export", "/projects/:id/export/"], requireAuth, migrationPlaceholder("Project export"));
+projectsRouter.get(["/projects/:id/export", "/projects/:id/export/"], requireAuth, asyncHandler(exportProjectController));

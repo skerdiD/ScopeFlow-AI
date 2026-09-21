@@ -11,6 +11,7 @@ const prismaMock = vi.hoisted(() => ({
 }));
 
 vi.mock("../lib/prisma.js", () => ({ prisma: prismaMock }));
+vi.mock("../services/demo.service.js", () => ({ ensureDemoWorkspace: vi.fn() }));
 vi.mock("../config/env.js", () => ({
   env: {
     NODE_ENV: "test",
