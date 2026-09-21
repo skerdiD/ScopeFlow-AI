@@ -1,17 +1,22 @@
 import { Router } from "express";
-import { migrationPlaceholder } from "../controllers/migration-placeholder.controller.js";
+import {
+  publicCommentController,
+  publicProposalController,
+  publicResponseController
+} from "../controllers/public.controller.js";
+import { asyncHandler } from "../utils/async-handler.js";
 
 export const publicRouter = Router();
 
 publicRouter.get(
   ["/public/proposals/:token", "/public/proposals/:token/"],
-  migrationPlaceholder("Public proposal view")
+  asyncHandler(publicProposalController)
 );
 publicRouter.post(
   ["/public/proposals/:token/response", "/public/proposals/:token/response/"],
-  migrationPlaceholder("Public proposal response")
+  asyncHandler(publicResponseController)
 );
 publicRouter.post(
   ["/public/proposals/:token/comments", "/public/proposals/:token/comments/"],
-  migrationPlaceholder("Public proposal comments")
+  asyncHandler(publicCommentController)
 );

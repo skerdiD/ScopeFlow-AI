@@ -26,14 +26,24 @@ async function fetchSupabaseUser(token: string): Promise<Record<string, unknown>
     throw new ApiError(401, "Supabase auth environment is not configured.");
   }
 
+  if (env.NODE_ENV === "production" && !env.SUPABASE_URL.toLowerCase().startsWith("https://")) {
+    throw new ApiError(401, "SUPABASE_URL must use HTTPS in production.");
+  }
+
   const endpoint = `${env.SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/user`;
-  const response = await fetch(endpoint, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      apikey: env.SUPABASE_ANON_KEY
-    },
-    redirect: "manual"
-  });
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: env.SUPABASE_ANON_KEY
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(10_000)
+    });
+  } catch {
+    throw new ApiError(401, "Supabase auth request failed.");
+  }
 
   if (!response.ok) {
     throw new ApiError(401, "Invalid or expired auth token.");

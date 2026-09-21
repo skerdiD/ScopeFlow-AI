@@ -31,6 +31,9 @@ const rawEnvSchema = z.object({
   DATABASE_URL: z.string().optional(),
   SUPABASE_URL: z.string().optional(),
   SUPABASE_ANON_KEY: z.string().optional(),
+  VITE_SUPABASE_URL: z.string().optional(),
+  VITE_SUPABASE_ANON_KEY: z.string().optional(),
+  VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY: z.string().optional(),
   SUPABASE_AUTH_CACHE_TTL: z.coerce.number().int().min(0).default(30),
   JSON_BODY_LIMIT: z.string().default("1mb"),
   GEMINI_API_KEY: z.string().optional(),
@@ -62,7 +65,15 @@ export const env = {
   ...parsedEnv,
   API_PREFIX: parsedEnv.API_PREFIX.startsWith("/") ? parsedEnv.API_PREFIX : `/${parsedEnv.API_PREFIX}`,
   CORS_ALLOWED_ORIGINS: Array.from(new Set([...derivedOrigins, ...devOrigins])),
-  DEMO_ACCOUNT_EMAIL: parsedEnv.DEMO_ACCOUNT_EMAIL.trim().toLowerCase()
+  DEMO_ACCOUNT_EMAIL: parsedEnv.DEMO_ACCOUNT_EMAIL.trim().toLowerCase(),
+  SUPABASE_URL:
+    parsedEnv.SUPABASE_URL ??
+    (parsedEnv.NODE_ENV === "development" ? parsedEnv.VITE_SUPABASE_URL : undefined),
+  SUPABASE_ANON_KEY:
+    parsedEnv.SUPABASE_ANON_KEY ??
+    (parsedEnv.NODE_ENV === "development"
+      ? parsedEnv.VITE_SUPABASE_ANON_KEY ?? parsedEnv.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY
+      : undefined)
 };
 
 export type AppEnv = typeof env;

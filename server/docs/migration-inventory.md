@@ -99,13 +99,27 @@ Development: `typescript`, `tsx`, `prisma`, `vitest`, `supertest`, `@types/*`.
 - PDF/DOCX output should be byte-compatible enough for frontend expectations, but not necessarily identical internally.
 - The backend CI workflow still needs a Node/Prisma test job replacement before Django is removed from CI.
 
-## Remaining For Prompt 2
+## Prompt 2 Persistence Migration
 
-- Port project CRUD, serializers, validation, ownership checks, and version snapshot logic.
-- Port usage service and AI usage logging transactions.
-- Port Gemini proposal/template/review/suggestion services and fallback normalization.
-- Port exports with PDF/DOCX binary responses and `Content-Disposition`.
-- Port public proposal link behavior and client comments.
-- Port demo seed/self-healing behavior.
-- Replace Django backend CI and deployment commands with Node commands.
-- Add endpoint-level parity tests against the inventory above.
+Completed in Express/Prisma:
+
+- Project list, create, retrieve, update, partial update, and delete.
+- Authenticated ownership is applied in every project lookup using both project id and the token-derived owner id; request-body `user_id` is accepted for client compatibility but discarded.
+- Manual version snapshots, restore-version behavior, final-version relabeling/creation, current-version updates, and generated-proposal snapshots.
+- Share-link generation, regeneration, disabling, public proposal views, approval/rejection responses, and client comments.
+- Current usage and combined workspace responses, including automatic free-plan/current-period record creation.
+- Supabase access-token verification and local `auth_user` mirror resolution, including the seeded demo identity mapping.
+- DRF-compatible snake_case serialization, numeric ids, ISO timestamps, field validation errors, and 404 behavior for another user's resources.
+
+Database introspection was attempted with `prisma db pull` against a temporary schema file. The configured Supabase pooler rejected the configured tenant/user as unknown, so no live schema was written and no database mutation occurred. The checked-in Prisma schema remains derived from all Django models and migrations and passes `prisma validate` and client generation. Live introspection and a read-only query must be repeated when a current `DATABASE_URL` is available.
+
+Templates and activity have no Django database models or CRUD endpoints: they remain frontend local-storage features. `/api/generate-template/` is a Gemini generation endpoint rather than template persistence.
+
+## Remaining For Prompt 3
+
+- Port Gemini proposal generation, template draft generation, section regeneration, quality review, edit suggestions, prompt selection, token accounting, and AI usage logs.
+- Port PDF/DOCX exports and preserve download headers and version selectors.
+- Port the demo seed command and login-time demo workspace self-healing; demo authorization restrictions are already enforced for migrated writes.
+- Add throttling parity for AI routes.
+- Repeat live Prisma introspection and database smoke queries with a working `DATABASE_URL`.
+- Switch deployment traffic only after the remaining `501` routes are implemented and end-to-end tested.

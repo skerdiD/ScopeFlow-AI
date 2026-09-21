@@ -1,20 +1,31 @@
 import { Router } from "express";
 import { migrationPlaceholder } from "../controllers/migration-placeholder.controller.js";
+import {
+  createProjectController,
+  deleteProjectController,
+  getProjectController,
+  listProjectController,
+  markFinalController,
+  restoreVersionController,
+  shareLinkController,
+  updateProjectController
+} from "../controllers/projects.controller.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
+import { asyncHandler } from "../utils/async-handler.js";
 
 export const projectsRouter = Router();
 
-projectsRouter.get(["/projects", "/projects/"], requireAuth, migrationPlaceholder("Project listing"));
-projectsRouter.post(["/projects", "/projects/"], requireAuth, migrationPlaceholder("Project creation"));
-projectsRouter.get(["/projects/:id", "/projects/:id/"], requireAuth, migrationPlaceholder("Project detail"));
-projectsRouter.put(["/projects/:id", "/projects/:id/"], requireAuth, migrationPlaceholder("Project update"));
-projectsRouter.patch(["/projects/:id", "/projects/:id/"], requireAuth, migrationPlaceholder("Project partial update"));
-projectsRouter.delete(["/projects/:id", "/projects/:id/"], requireAuth, migrationPlaceholder("Project deletion"));
+projectsRouter.get(["/projects", "/projects/"], requireAuth, asyncHandler(listProjectController));
+projectsRouter.post(["/projects", "/projects/"], requireAuth, asyncHandler(createProjectController));
+projectsRouter.get(["/projects/:id", "/projects/:id/"], requireAuth, asyncHandler(getProjectController));
+projectsRouter.put(["/projects/:id", "/projects/:id/"], requireAuth, asyncHandler(updateProjectController));
+projectsRouter.patch(["/projects/:id", "/projects/:id/"], requireAuth, asyncHandler(updateProjectController));
+projectsRouter.delete(["/projects/:id", "/projects/:id/"], requireAuth, asyncHandler(deleteProjectController));
 projectsRouter.post(
   ["/projects/:id/restore-version", "/projects/:id/restore-version/"],
   requireAuth,
-  migrationPlaceholder("Proposal version restore")
+  asyncHandler(restoreVersionController)
 );
-projectsRouter.post(["/projects/:id/mark-final", "/projects/:id/mark-final/"], requireAuth, migrationPlaceholder("Mark final"));
-projectsRouter.post(["/projects/:id/share-link", "/projects/:id/share-link/"], requireAuth, migrationPlaceholder("Share link"));
+projectsRouter.post(["/projects/:id/mark-final", "/projects/:id/mark-final/"], requireAuth, asyncHandler(markFinalController));
+projectsRouter.post(["/projects/:id/share-link", "/projects/:id/share-link/"], requireAuth, asyncHandler(shareLinkController));
 projectsRouter.get(["/projects/:id/export", "/projects/:id/export/"], requireAuth, migrationPlaceholder("Project export"));
