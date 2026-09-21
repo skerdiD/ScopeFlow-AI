@@ -5,16 +5,17 @@
   "description": "ScopeFlow AI monorepo (client, server, and database tooling).",
   "scripts": {
     "install:client": "cd client && npm install --no-workspaces",
+    "install:server": "cd server && npm install --no-workspaces",
     "install:database": "cd database && npm install --no-workspaces",
-    "setup": "npm run install:client && npm run install:database",
+    "setup": "npm run install:client && npm run install:server && npm run install:database",
     "dev": "concurrently -k -n CLIENT,SERVER -c cyan,green \"npm run dev:web\" \"npm run dev:server\"",
     "dev:client": "cd client && npm run dev:web",
     "dev:web": "cd client && npm run dev:web",
-    "dev:server": "cd server && python manage.py migrate && python manage.py runserver 127.0.0.1:8000",
+    "dev:server": "cd server && npm run dev",
     "build": "npm run build:client && npm run build:server",
     "build:client": "cd client && npm run build",
-    "build:server": "cd server && python manage.py check && python manage.py makemigrations --check --dry-run",
-    "test": "cd server && python manage.py test proposals --keepdb"
+    "build:server": "cd server && npm run build",
+    "test": "cd server && npm test"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

@@ -14,20 +14,6 @@ on:
 jobs:
   test-backend:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: scopeflow_ci
-          POSTGRES_USER: scopeflow
-          POSTGRES_PASSWORD: scopeflow
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U scopeflow -d scopeflow_ci"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     defaults:
       run:
@@ -37,21 +23,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.13"
-          cache: "pip"
-          cache-dependency-path: "server/requirements.txt"
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "server/package-lock.json"
 
       - name: Install backend dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+        run: npm ci
 
-      - name: Run proposal backend tests
+      - name: Generate Prisma client
         env:
-          SECRET_KEY: ci-secret-key
-          DEBUG: "False"
           DATABASE_URL: postgresql://scopeflow:scopeflow@127.0.0.1:5432/scopeflow_ci?sslmode=disable
-        run: python manage.py test proposals --verbosity 2
+        run: npm run prisma:generate
+
+      - name: Typecheck backend
+        run: npm run typecheck
+
+      - name: Run backend tests
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://scopeflow:scopeflow@127.0.0.1:5432/scopeflow_ci?sslmode=disable
+        run: npm test
