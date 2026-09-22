@@ -55,18 +55,18 @@ function generated(project: DemoProject): Prisma.InputJsonValue {
 }
 
 async function localDemoUser(email: string) {
-  const found = await prisma.djangoUser.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, orderBy: { id: "asc" } });
+  const found = await prisma.localUser.findFirst({ where: { email: { equals: email, mode: "insensitive" } }, orderBy: { id: "asc" } });
   if (found) return found;
   const slug = email.split("@", 1)[0].replace(/[._]/g, "-");
   const username = `demo-seed-${slug}`.slice(0, 150);
-  const existingUsername = await prisma.djangoUser.findUnique({ where: { username } });
+  const existingUsername = await prisma.localUser.findUnique({ where: { username } });
   if (existingUsername) {
-    return prisma.djangoUser.update({
+    return prisma.localUser.update({
       where: { id: existingUsername.id },
       data: { email, firstName: existingUsername.firstName || "Alex", lastName: existingUsername.lastName || "Morgan" }
     });
   }
-  return prisma.djangoUser.create({
+  return prisma.localUser.create({
     data: {
       username, email, firstName: "Alex", lastName: "Morgan",
       password: "!", isStaff: false, isActive: true, isSuperuser: false, dateJoined: new Date()
@@ -78,6 +78,7 @@ export async function seedDemoWorkspace(options: { email?: string; reset?: boole
   const email = (options.email ?? env.DEMO_ACCOUNT_EMAIL).trim().toLowerCase();
   const user = await localDemoUser(email);
   return prisma.$transaction(async (tx) => {
+    const seededAt = new Date();
     if (options.reset) {
       const ids = (await tx.proposalProject.findMany({ where: { userId: user.username, isDemo: true }, select: { id: true } })).map((item) => item.id);
       if (ids.length) {
@@ -90,16 +91,24 @@ export async function seedDemoWorkspace(options: { email?: string; reset?: boole
         await tx.userPlan.deleteMany({ where: { userId: user.id } });
       }
     }
-    await tx.userPlan.upsert({ where: { userId: user.id }, create: { userId: user.id, plan: "pro" }, update: { plan: "pro" } });
+    await tx.userPlan.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, plan: "pro", createdAt: seededAt },
+      update: { plan: "pro" }
+    });
     await tx.usageRecord.upsert({
       where: { userId_period: { userId: user.id, period: currentPeriod() } },
-      create: { userId: user.id, period: currentPeriod(), aiGenerationsUsed: 50 },
+      create: { userId: user.id, period: currentPeriod(), aiGenerationsUsed: 50, createdAt: seededAt },
       update: { aiGenerationsUsed: 50 }
     });
     const projects = [];
     for (let index = 0; index < DEMO_PROJECTS.length; index += 1) {
       const data = DEMO_PROJECTS[index];
-      const existing = await tx.proposalProject.findFirst({ where: { userId: user.username, projectName: data.projectName } });
+      const existing = await tx.proposalProject.findFirst({
+        where: { userId: user.username, projectName: data.projectName, isDemo: true }
+      });
+      const createdAt = new Date(Date.now() - data.daysCreated * 86_400_000);
+      const updatedAt = new Date(Date.now() - data.daysUpdated * 86_400_000);
       const fields = {
         clientName: data.clientName, projectType: data.projectType, budget: data.budget, timeline: data.timeline,
         requirements: `Client goal: ${data.summary}\nBudget: ${data.budget}\nTimeline: ${data.timeline}`,
@@ -110,8 +119,9 @@ export async function seedDemoWorkspace(options: { email?: string; reset?: boole
         scopeRisks: data.risks.slice(0, 2), unclearRequirements: data.status === "approved" ? [] : ["Exact third-party tool access"],
         suggestedQuestions: ["Who will approve final scope?", "Which workflows are highest priority for launch?", "Are there fixed dates we need to protect?"],
         generatedProposal: generated(data), status: data.status, isDemo: true, shareEnabled: false, shareToken: null,
-        createdAt: new Date(Date.now() - data.daysCreated * 86_400_000),
-        updatedAt: new Date(Date.now() - data.daysUpdated * 86_400_000)
+        paymentUrl: "", clientNameResponse: "", clientEmailResponse: "", clientResponseComment: "",
+        createdAt,
+        updatedAt
       };
       const project = existing
         ? await tx.proposalProject.update({ where: { id: existing.id }, data: fields })
@@ -128,12 +138,13 @@ export async function seedDemoWorkspace(options: { email?: string; reset?: boole
             changedSections: versionNumber === 1 ? ["summary", "scope", "deliverables", "milestones", "risks"] : ["scope", "pricing", "next_steps"],
             summary: versionNumber === 1 ? `${data.summary} This first draft establishes the core client direction.` : data.summary,
             scope: bullets(data.scope), deliverables: bullets(data.deliverables), milestones: data.milestones.join("\n"),
-            proposalTimeline: bullets([data.timeline]), pricing: bullets(data.pricing), risks: bullets(data.risks), nextSteps: bullets(data.nextSteps), isFinal
+            proposalTimeline: bullets([data.timeline]), pricing: bullets(data.pricing), risks: bullets(data.risks), nextSteps: bullets(data.nextSteps), isFinal,
+            createdAt: new Date(createdAt.getTime() + ((updatedAt.getTime() - createdAt.getTime()) * versionNumber) / data.versions)
           }
         });
         currentVersionId = version.id;
       }
-      await tx.proposalProject.update({ where: { id: project.id }, data: { currentVersionId } });
+      await tx.proposalProject.update({ where: { id: project.id }, data: { currentVersionId, updatedAt } });
       projects.push(project);
     }
     await tx.aIUsageLog.deleteMany({ where: { userId: user.id, projectId: { in: projects.map((project) => project.id) } } });
@@ -141,7 +152,7 @@ export async function seedDemoWorkspace(options: { email?: string; reset?: boole
     const actions = ["full_proposal_generation", "section_regeneration", "quality_score", "edit_suggestions"];
     for (let index = 0; index < 8; index += 1) {
       await tx.aIUsageLog.create({
-        data: { userId: user.id, projectId: projects[index].id, actionType: actions[index % actions.length], status: "success", inputTokens: 950 + index * 80, outputTokens: 520 + index * 45, totalTokens: 1470 + index * 125, createdAt: new Date(Date.now() - index * 86_400_000 - index * 7_200_000) }
+        data: { userId: user.id, projectId: projects[index].id, actionType: actions[index % actions.length], status: "success", errorMessage: "", inputTokens: 950 + index * 80, outputTokens: 520 + index * 45, totalTokens: 1470 + index * 125, createdAt: new Date(Date.now() - index * 86_400_000 - index * 7_200_000) }
       });
     }
     for (const [index, project] of projects.filter((item) => ["sent", "approved"].includes(item.status)).slice(0, 4).entries()) {

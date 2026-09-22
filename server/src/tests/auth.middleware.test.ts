@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
-  djangoUser: {
+  localUser: {
     findFirst: vi.fn(),
     findUnique: vi.fn(),
     create: vi.fn(),
@@ -42,13 +42,13 @@ describe("Supabase authentication middleware", () => {
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 401 }));
   });
 
-  it("verifies the token and resolves the local Django user mirror", async () => {
+  it("verifies the token and resolves the local database user", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({ id: "supabase-user-1", email: "owner@example.com" })
     }));
-    prismaMock.djangoUser.findFirst.mockResolvedValue(null);
-    prismaMock.djangoUser.findUnique.mockResolvedValue({
+    prismaMock.localUser.findFirst.mockResolvedValue(null);
+    prismaMock.localUser.findUnique.mockResolvedValue({
       id: 7,
       username: "supabase-user-1",
       email: "owner@example.com"
@@ -74,7 +74,7 @@ describe("Supabase authentication middleware", () => {
       ok: true,
       json: vi.fn().mockResolvedValue({ id: "remote-demo-id", email: "demo@scopeflow.ai" })
     }));
-    prismaMock.djangoUser.findFirst.mockResolvedValue({
+    prismaMock.localUser.findFirst.mockResolvedValue({
       id: 9,
       username: "demo-seed-account",
       email: "demo@scopeflow.ai"
@@ -84,6 +84,14 @@ describe("Supabase authentication middleware", () => {
     await requireAuth(req, {} as Response, vi.fn());
 
     expect(req.authUser).toMatchObject({ username: "demo-seed-account", isDemo: true });
-    expect(prismaMock.djangoUser.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.localUser.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejects bearer headers containing extra token data", async () => {
+    const next = vi.fn() as NextFunction;
+    await requireAuth(requestWithHeader("Bearer valid-token unexpected"), {} as Response, next);
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 401 }));
   });
 });

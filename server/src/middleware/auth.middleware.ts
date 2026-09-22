@@ -65,10 +65,10 @@ async function fetchSupabaseUser(token: string): Promise<Record<string, unknown>
   return payload;
 }
 
-async function getOrCreateDjangoUser(supabaseUserId: string, email: string) {
+async function getOrCreateLocalUser(supabaseUserId: string, email: string) {
   const normalizedEmail = email.trim().toLowerCase();
   if (normalizedEmail) {
-    const demoUser = await prisma.djangoUser.findFirst({
+    const demoUser = await prisma.localUser.findFirst({
       where: { email: { equals: normalizedEmail, mode: "insensitive" } },
       orderBy: { id: "asc" }
     });
@@ -77,10 +77,10 @@ async function getOrCreateDjangoUser(supabaseUserId: string, email: string) {
     }
   }
 
-  const existing = await prisma.djangoUser.findUnique({ where: { username: supabaseUserId } });
+  const existing = await prisma.localUser.findUnique({ where: { username: supabaseUserId } });
   if (existing) {
     if (email && existing.email !== email) {
-      return prisma.djangoUser.update({
+      return prisma.localUser.update({
         where: { id: existing.id },
         data: { email }
       });
@@ -89,7 +89,7 @@ async function getOrCreateDjangoUser(supabaseUserId: string, email: string) {
   }
 
   const now = new Date();
-  return prisma.djangoUser.create({
+  return prisma.localUser.create({
     data: {
       username: supabaseUserId,
       email,
@@ -107,11 +107,13 @@ async function getOrCreateDjangoUser(supabaseUserId: string, email: string) {
 export const requireAuth: RequestHandler = async (req, _res, next) => {
   try {
     const authHeader = req.header("authorization")?.trim() ?? "";
-    const [scheme, token] = authHeader.split(" ");
+    const match = authHeader.match(/^Bearer\s+(\S+)$/i);
 
-    if (!authHeader || scheme?.toLowerCase() !== "bearer" || !token) {
+    if (!match) {
       throw new ApiError(401, "Authentication credentials were not provided.");
     }
+
+    const token = match[1];
 
     const supabaseUser = await fetchSupabaseUser(token.trim());
     const supabaseUserId = String(supabaseUser.id ?? "").trim();
@@ -120,16 +122,16 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
     }
 
     const email = String(supabaseUser.email ?? "").trim();
-    const djangoUser = await getOrCreateDjangoUser(supabaseUserId, email);
-    await ensureDemoWorkspace(djangoUser);
+    const localUser = await getOrCreateLocalUser(supabaseUserId, email);
+    await ensureDemoWorkspace(localUser);
 
     req.supabaseUser = supabaseUser;
     req.authUser = {
-      id: djangoUser.id,
-      username: djangoUser.username,
-      email: djangoUser.email,
+      id: localUser.id,
+      username: localUser.username,
+      email: localUser.email,
       supabaseUserId,
-      isDemo: isDemoIdentity(djangoUser.email, djangoUser.username)
+      isDemo: isDemoIdentity(localUser.email, localUser.username)
     };
 
     next();

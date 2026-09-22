@@ -38,6 +38,11 @@ jobs:
           DATABASE_URL: postgresql://scopeflow:scopeflow@127.0.0.1:5432/scopeflow_ci?sslmode=disable
         run: npm run prisma:generate
 
+      - name: Validate Prisma schema
+        env:
+          DATABASE_URL: postgresql://scopeflow:scopeflow@127.0.0.1:5432/scopeflow_ci?sslmode=disable
+        run: npx prisma validate
+
       - name: Typecheck backend
         run: npm run typecheck
 
@@ -46,3 +51,6 @@ jobs:
           NODE_ENV: test
           DATABASE_URL: postgresql://scopeflow:scopeflow@127.0.0.1:5432/scopeflow_ci?sslmode=disable
         run: npm test
+
+      - name: Build backend
+        run: npm run build

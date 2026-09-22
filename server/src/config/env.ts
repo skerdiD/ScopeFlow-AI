@@ -23,7 +23,9 @@ function normalizeOrigin(value: string | undefined): string | null {
 
 const rawEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  HOST: z.string().trim().min(1).default("0.0.0.0"),
   PORT: z.coerce.number().int().positive().default(8000),
+  TRUST_PROXY: z.coerce.number().int().min(0).optional(),
   API_PREFIX: z.string().default("/api"),
   CORS_ALLOWED_ORIGINS: z.string().optional(),
   FRONTEND_URL: z.string().optional(),
@@ -46,7 +48,27 @@ const rawEnvSchema = z.object({
   DEMO_ACCOUNT_EMAIL: z.string().email().default("demo@scopeflow.ai")
 });
 
-const parsedEnv = rawEnvSchema.parse(process.env);
+const parsedEnv = rawEnvSchema.superRefine((value, context) => {
+  if (value.NODE_ENV !== "production") return;
+
+  for (const key of ["DATABASE_URL", "SUPABASE_URL", "SUPABASE_ANON_KEY", "GEMINI_API_KEY"] as const) {
+    if (!value[key]?.trim()) {
+      context.addIssue({
+        code: "custom",
+        path: [key],
+        message: `${key} is required in production.`
+      });
+    }
+  }
+
+  if (![value.CORS_ALLOWED_ORIGINS, value.FRONTEND_URL, value.VERCEL_URL].some((item) => item?.trim())) {
+    context.addIssue({
+      code: "custom",
+      path: ["CORS_ALLOWED_ORIGINS"],
+      message: "A production frontend origin is required."
+    });
+  }
+}).parse(process.env);
 
 const derivedOrigins = [
   ...csv(parsedEnv.CORS_ALLOWED_ORIGINS),
@@ -68,6 +90,7 @@ const devOrigins =
 
 export const env = {
   ...parsedEnv,
+  TRUST_PROXY: parsedEnv.TRUST_PROXY ?? (parsedEnv.NODE_ENV === "production" ? 1 : 0),
   API_PREFIX: parsedEnv.API_PREFIX.startsWith("/") ? parsedEnv.API_PREFIX : `/${parsedEnv.API_PREFIX}`,
   CORS_ALLOWED_ORIGINS: Array.from(new Set([...derivedOrigins, ...devOrigins])),
   DEMO_ACCOUNT_EMAIL: parsedEnv.DEMO_ACCOUNT_EMAIL.trim().toLowerCase(),

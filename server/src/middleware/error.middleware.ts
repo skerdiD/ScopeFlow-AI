@@ -27,6 +27,16 @@ export const errorMiddleware: ErrorRequestHandler = (error, _req, res, _next) =>
     return;
   }
 
+  if (error instanceof SyntaxError && "status" in error && error.status === 400) {
+    res.status(400).json({ detail: "Malformed JSON request body." });
+    return;
+  }
+
+  if (error && typeof error === "object" && "type" in error && error.type === "entity.too.large") {
+    res.status(413).json({ detail: "Request body is too large." });
+    return;
+  }
+
   console.error(error);
   res.status(500).json({ detail: "Server error. Please try again later." });
 };

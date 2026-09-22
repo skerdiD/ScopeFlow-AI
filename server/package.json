@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "ScopeFlow AI backend API migrated to Express, TypeScript, and Prisma.",
   "type": "module",
-  "main": "dist/server.js",
+  "main": "dist/src/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/src/server.js",

@@ -32,17 +32,11 @@ build/
 coverage/
 *.tsbuildinfo
 
-# Python / Django
+# Local interpreter/tool artifacts (not part of the application stack)
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-.coverage
-htmlcov/
 .venv/
 **/.venv/
-venv/
-*.sqlite3
 
 # Tool caches
 .pytest_cache/

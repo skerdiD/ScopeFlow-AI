@@ -112,6 +112,17 @@ export async function generateProposal(user: Express.AuthenticatedUser, input: G
         timeline: input.timeline,
         requirements,
         status: "draft",
+        paymentUrl: "",
+        missingInformation: [],
+        scopeRisks: [],
+        unclearRequirements: [],
+        suggestedQuestions: [],
+        shareEnabled: false,
+        clientNameResponse: "",
+        clientEmailResponse: "",
+        clientResponseComment: "",
+        isDemo: false,
+        createdAt: new Date(),
         ...generatedFields(result.data)
       }
     });
@@ -170,7 +181,8 @@ export async function reviewQuality(user: Express.AuthenticatedUser, projectId: 
         promptVersionId: result.promptVersion?.id,
         score: result.review.score, summary: result.review.summary,
         strengths: result.review.strengths, weaknesses: result.review.weaknesses,
-        recommendations: result.review.recommendations
+        recommendations: result.review.recommendations,
+        createdAt: new Date()
       }
     });
     await logAiAction({

@@ -31,4 +31,14 @@ describe("Express foundation", () => {
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ detail: "Not found." });
   });
+
+  it("returns a client error for malformed JSON instead of a server error", async () => {
+    const response = await request(app)
+      .post("/api/projects/")
+      .set("Content-Type", "application/json")
+      .send('{"client_name":');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ detail: "Malformed JSON request body." });
+  });
 });

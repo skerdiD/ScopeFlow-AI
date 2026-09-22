@@ -53,7 +53,8 @@ export async function respondToPublicProject(token: string, input: {
           projectId: project.id,
           clientName: input.client_name,
           clientEmail: input.client_email,
-          comment: input.comment
+          comment: input.comment,
+          createdAt: new Date()
         }
       });
     }
@@ -72,7 +73,8 @@ export async function addPublicComment(token: string, input: {
       projectId: project.id,
       clientName: input.client_name,
       clientEmail: input.client_email,
-      comment: input.comment
+      comment: input.comment,
+      createdAt: new Date()
     }
   });
 }

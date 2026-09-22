@@ -94,7 +94,8 @@ export async function createProjectVersion(
       pricing: project.pricing,
       risks: project.risks,
       nextSteps: project.nextSteps,
-      isFinal
+      isFinal,
+      createdAt: new Date()
     }
   });
   await tx.proposalProject.update({ where: { id: project.id }, data: { currentVersionId: version.id } });
@@ -122,8 +123,30 @@ export async function createProject(ownerId: string, input: ProjectInput, isDemo
       data: {
         ...(data as Prisma.ProposalProjectUncheckedCreateInput),
         userId: ownerId,
+        budget: input.budget ?? "",
+        timeline: input.timeline ?? "",
+        requirements: input.requirements ?? "",
+        summary: input.summary ?? "",
+        scope: input.scope ?? "",
+        deliverables: input.deliverables ?? "",
+        milestones: input.milestones ?? "",
+        proposalTimeline: input.proposal_timeline ?? "",
+        pricing: input.pricing ?? "",
+        risks: input.risks ?? "",
+        nextSteps: input.next_steps ?? "",
+        paymentUrl: input.payment_url ?? "",
+        missingInformation: json(input.missing_information ?? []),
+        scopeRisks: json(input.scope_risks ?? []),
+        unclearRequirements: json(input.unclear_requirements ?? []),
+        suggestedQuestions: json(input.suggested_questions ?? []),
+        status: input.status ?? "draft",
+        shareEnabled: false,
+        clientNameResponse: "",
+        clientEmailResponse: "",
+        clientResponseComment: "",
         isDemo,
-        generatedProposal: json(buildGeneratedProposalSnapshot(snapshotSource))
+        generatedProposal: json(buildGeneratedProposalSnapshot(snapshotSource)),
+        createdAt: new Date()
       }
     });
     if (SECTION_FIELDS.some((field) => String(project[field] ?? "").trim())) {

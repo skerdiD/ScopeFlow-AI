@@ -1,6 +1,6 @@
 # ScopeFlow AI
 
-**ScopeFlow AI** is a full-stack AI proposal workspace built with **React**, **TypeScript**, **Vite**, **Django REST Framework**, **Supabase Auth**, **PostgreSQL**, and **Gemini AI**.
+**ScopeFlow AI** is a full-stack AI proposal workspace built with **React**, **TypeScript**, **Vite**, **Express**, **Prisma**, **Supabase Auth**, **PostgreSQL**, and **Gemini AI**.
 
 It helps freelancers and agencies turn rough client requirements into structured proposals, review proposal quality, manage versions, reuse templates, track usage, and export client-ready files.
 
@@ -18,16 +18,16 @@ The demo account is public and only for exploring the app experience. It uses sa
 To seed or reset demo data locally:
 
 ```bash
-python manage.py seed_demo_data
-python manage.py seed_demo_data --reset
+npm run seed:demo
+npm run seed:demo:reset
 ```
 
 Before using the deployed demo login:
 
 1. Create and confirm `demo@scopeflow.ai` in Supabase Auth with the password above.
-2. Run `python manage.py seed_demo_data --reset` against the deployed database.
+2. Run `npm run seed:demo:reset` from `server/` against the deployed database.
 
-The seed command creates the matching Django demo workspace; it does not bypass or create the Supabase Auth user.
+The seed command creates the matching local database workspace; it does not bypass or create the Supabase Auth user.
 The backend also verifies the workspace after demo authentication and automatically repairs missing projects, plan, or current-period usage data in the database serving the API.
 
 ---
@@ -124,13 +124,16 @@ For clients, it shows the foundation of a practical proposal SaaS where users ca
 * TypeScript
 * Vite
 * Tailwind CSS
+* TanStack Query
 * React Router
 * Lucide React
 
 ### Backend and Database
 
-* Django
-* Django REST Framework
+* Node.js
+* TypeScript
+* Express.js
+* Prisma ORM
 * PostgreSQL
 * Supabase Auth
 * Supabase token verification
@@ -162,14 +165,16 @@ Auth Layer
   |-- User-Scoped Data
 
 Backend Layer
-  |-- Django REST Framework
+  |-- Node.js / TypeScript / Express
+  |-- Prisma ORM mapped to the existing database
   |-- Project APIs / Template APIs / Usage APIs
   |-- Export APIs / AI Review APIs
 
 Data and AI Layer
-  |-- PostgreSQL
-  |-- Projects / Proposal Versions / Templates / Activity Logs
-  |-- Usage Records / Quality Reviews / Gemini AI
+  |-- Supabase PostgreSQL
+  |-- Projects / Proposal Versions / Usage / Quality Reviews
+  |-- Browser storage for templates and activity history
+  |-- Gemini AI
 ```
 
 Proposal data is scoped to the authenticated user, AI logic stays server-side, and exports turn generated proposals into client-ready files.
@@ -203,13 +208,12 @@ VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 ```
 
-### 4. Install backend dependencies
+### 4. Install backend dependencies and generate Prisma Client
 
 ```bash
 cd ../server
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
+npm install
+npm run prisma:generate
 ```
 
 ### 5. Create backend environment variables
@@ -217,9 +221,10 @@ pip install -r requirements.txt
 Create a `.env` file inside the `server` folder:
 
 ```env
-SECRET_KEY=
-DEBUG=True
-ALLOWED_HOSTS=127.0.0.1,localhost
+NODE_ENV=development
+HOST=0.0.0.0
+PORT=8000
+API_PREFIX=/api
 CORS_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
 DATABASE_URL=
 SUPABASE_URL=
@@ -231,8 +236,7 @@ GEMINI_MODEL=gemini-2.5-flash
 ### 6. Run and start
 
 ```bash
-python manage.py migrate
-python manage.py runserver
+npm run dev
 ```
 
 Open a second terminal:
@@ -266,11 +270,14 @@ npm run test          # Run frontend tests
 ### Backend
 
 ```bash
-python manage.py runserver              # Start Django server
-python manage.py migrate                # Run migrations
-python manage.py test proposals         # Run backend tests
-python manage.py seed_demo_data         # Seed demo data
-python manage.py seed_demo_data --reset # Reset demo data
+npm run dev             # Start the Express development server
+npm run typecheck       # Run backend TypeScript checks
+npm test                # Run backend tests
+npm run build           # Compile the production backend
+npm start               # Start the compiled backend
+npm run prisma:generate # Generate Prisma Client
+npm run seed:demo       # Seed demo data
+npm run seed:demo:reset # Reset only demo-scoped data, then reseed
 ```
 
 ---
@@ -279,8 +286,8 @@ python manage.py seed_demo_data --reset # Reset demo data
 
 * Vitest validates frontend behavior
 * React Testing Library supports component tests
-* Django tests validate backend proposal logic
-* TypeScript catches frontend type issues
+* Vitest validates backend proposal logic without real Gemini calls
+* TypeScript catches frontend and backend type issues
 * ESLint keeps code quality consistent
 * GitHub Actions runs quality checks
 
@@ -297,7 +304,7 @@ Run backend tests:
 
 ```bash
 cd server
-python manage.py test proposals
+npm test
 ```
 
 ---

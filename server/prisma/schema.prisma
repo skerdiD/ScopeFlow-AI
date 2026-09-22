@@ -7,10 +7,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model DjangoUser {
+model LocalUser {
   id           Int               @id @default(autoincrement())
   password     String            @db.VarChar(128)
-  lastLogin    DateTime?         @map("last_login")
+  lastLogin    DateTime?         @map("last_login") @db.Timestamptz(6)
   isSuperuser  Boolean           @map("is_superuser")
   username     String            @unique @db.VarChar(150)
   firstName    String            @map("first_name") @db.VarChar(150)
@@ -18,7 +18,7 @@ model DjangoUser {
   email        String            @db.VarChar(254)
   isStaff      Boolean           @map("is_staff")
   isActive     Boolean           @map("is_active")
-  dateJoined   DateTime          @map("date_joined")
+  dateJoined   DateTime          @map("date_joined") @db.Timestamptz(6)
   plan         UserPlan?
   usageRecords UsageRecord[]
   aiUsageLogs  AIUsageLog[]
@@ -30,10 +30,10 @@ model DjangoUser {
 model UserPlan {
   id        BigInt     @id @default(autoincrement())
   userId    Int        @unique @map("user_id")
-  plan      String     @default("free") @db.VarChar(20)
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
-  user      DjangoUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan      String     @db.VarChar(20)
+  createdAt DateTime   @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user      LocalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("proposals_userplan")
 }
@@ -42,13 +42,13 @@ model UsageRecord {
   id                BigInt     @id @default(autoincrement())
   userId            Int        @map("user_id")
   period            DateTime   @db.Date
-  aiGenerationsUsed Int        @default(0) @map("ai_generations_used")
-  createdAt         DateTime   @default(now()) @map("created_at")
-  updatedAt         DateTime   @updatedAt @map("updated_at")
-  user              DjangoUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiGenerationsUsed Int        @map("ai_generations_used")
+  createdAt         DateTime   @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  user              LocalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, period], map: "unique_user_usage_period")
-  @@index([period])
+  @@index([period], map: "proposals_usagerecord_period_4480abc8_idx")
   @@index([userId, period], map: "usage_user_period_idx")
   @@map("proposals_usagerecord")
 }
@@ -59,15 +59,15 @@ model AIPromptVersion {
   version        String            @db.VarChar(50)
   purpose        String            @db.VarChar(50)
   promptText     String            @map("prompt_text")
-  isActive       Boolean           @default(false) @map("is_active")
-  createdAt      DateTime          @default(now()) @map("created_at")
-  updatedAt      DateTime          @updatedAt @map("updated_at")
+  isActive       Boolean           @map("is_active")
+  createdAt      DateTime          @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   usageLogs      AIUsageLog[]
   qualityReviews AIQualityReview[]
 
   @@unique([purpose, version], map: "unique_prompt_purpose_version")
-  @@index([purpose])
-  @@index([isActive])
+  @@index([purpose], map: "proposals_aipromptversion_purpose_6f94cd09_idx")
+  @@index([isActive], map: "proposals_aipromptversion_is_active_777477ce_idx")
   @@map("proposals_aipromptversion")
 }
 
@@ -77,44 +77,44 @@ model ProposalProject {
   clientName            String                  @map("client_name") @db.VarChar(255)
   projectName           String                  @map("project_name") @db.VarChar(255)
   projectType           String                  @map("project_type") @db.VarChar(120)
-  budget                String                  @default("") @db.VarChar(120)
-  timeline              String                  @default("") @db.VarChar(120)
-  requirements          String                  @default("")
-  summary               String                  @default("")
-  scope                 String                  @default("")
-  deliverables          String                  @default("")
-  milestones            String                  @default("")
-  proposalTimeline      String                  @default("") @map("proposal_timeline")
-  pricing               String                  @default("")
-  risks                 String                  @default("")
-  nextSteps             String                  @default("") @map("next_steps")
-  paymentUrl            String                  @default("") @map("payment_url") @db.VarChar(200)
-  missingInformation    Json                    @default("[]") @map("missing_information")
-  scopeRisks            Json                    @default("[]") @map("scope_risks")
-  unclearRequirements   Json                    @default("[]") @map("unclear_requirements")
-  suggestedQuestions    Json                    @default("[]") @map("suggested_questions")
-  generatedProposal     Json                    @default("{}") @map("generated_proposal")
+  budget                String                  @db.VarChar(120)
+  timeline              String                  @db.VarChar(120)
+  requirements          String
+  summary               String
+  scope                 String
+  deliverables          String
+  milestones            String
+  proposalTimeline      String                  @map("proposal_timeline")
+  pricing               String
+  risks                 String
+  nextSteps             String                  @map("next_steps")
+  paymentUrl            String                  @map("payment_url") @db.VarChar(200)
+  missingInformation    Json                    @map("missing_information")
+  scopeRisks            Json                    @map("scope_risks")
+  unclearRequirements   Json                    @map("unclear_requirements")
+  suggestedQuestions    Json                    @map("suggested_questions")
+  generatedProposal     Json                    @map("generated_proposal")
   currentVersionId      BigInt?                 @map("current_version_id")
-  status                String                  @default("draft") @db.VarChar(50)
+  status                String                  @db.VarChar(50)
   shareToken            String?                 @unique @map("share_token") @db.VarChar(64)
-  shareEnabled          Boolean                 @default(false) @map("share_enabled")
-  shareCreatedAt        DateTime?               @map("share_created_at")
-  viewedAt              DateTime?               @map("viewed_at")
-  clientNameResponse    String                  @default("") @map("client_name_response") @db.VarChar(255)
-  clientEmailResponse   String                  @default("") @map("client_email_response") @db.VarChar(254)
-  clientResponseComment String                  @default("") @map("client_response_comment")
-  approvedAt            DateTime?               @map("approved_at")
-  rejectedAt            DateTime?               @map("rejected_at")
-  isDemo                Boolean                 @default(false) @map("is_demo")
-  createdAt             DateTime                @default(now()) @map("created_at")
-  updatedAt             DateTime                @updatedAt @map("updated_at")
+  shareEnabled          Boolean                 @map("share_enabled")
+  shareCreatedAt        DateTime?               @map("share_created_at") @db.Timestamptz(6)
+  viewedAt              DateTime?               @map("viewed_at") @db.Timestamptz(6)
+  clientNameResponse    String                  @map("client_name_response") @db.VarChar(255)
+  clientEmailResponse   String                  @map("client_email_response") @db.VarChar(254)
+  clientResponseComment String                  @map("client_response_comment")
+  approvedAt            DateTime?               @map("approved_at") @db.Timestamptz(6)
+  rejectedAt            DateTime?               @map("rejected_at") @db.Timestamptz(6)
+  isDemo                Boolean                 @map("is_demo")
+  createdAt             DateTime                @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
   currentVersion        ProposalVersion?        @relation("CurrentProjectVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
   versions              ProposalVersion[]       @relation("ProjectVersions")
   clientComments        ProposalClientComment[]
   aiUsageLogs           AIUsageLog[]
   qualityReviews        AIQualityReview[]
 
-  @@index([userId])
+  @@index([userId], map: "proposals_proposalproject_user_id_6579922d_idx")
   @@index([userId, updatedAt], map: "proposal_user_updated_idx")
   @@map("proposals_proposalproject")
 }
@@ -124,18 +124,18 @@ model ProposalVersion {
   projectId         BigInt            @map("project_id")
   versionNumber     Int               @map("version_number")
   label             String            @db.VarChar(50)
-  source            String            @default("manual") @db.VarChar(50)
-  changedSections   Json              @default("[]") @map("changed_sections")
-  summary           String            @default("")
-  scope             String            @default("")
-  deliverables      String            @default("")
-  milestones        String            @default("")
-  proposalTimeline  String            @default("") @map("proposal_timeline")
-  pricing           String            @default("")
-  risks             String            @default("")
-  nextSteps         String            @default("") @map("next_steps")
-  isFinal           Boolean           @default(false) @map("is_final")
-  createdAt         DateTime          @default(now()) @map("created_at")
+  source            String            @db.VarChar(50)
+  changedSections   Json              @map("changed_sections")
+  summary           String
+  scope             String
+  deliverables      String
+  milestones        String
+  proposalTimeline  String            @map("proposal_timeline")
+  pricing           String
+  risks             String
+  nextSteps         String            @map("next_steps")
+  isFinal           Boolean           @map("is_final")
+  createdAt         DateTime          @map("created_at") @db.Timestamptz(6)
   project           ProposalProject   @relation("ProjectVersions", fields: [projectId], references: [id], onDelete: Cascade)
   currentForProject ProposalProject[] @relation("CurrentProjectVersion")
   qualityReviews    AIQualityReview[]
@@ -147,10 +147,10 @@ model ProposalVersion {
 model ProposalClientComment {
   id          BigInt          @id @default(autoincrement())
   projectId   BigInt          @map("project_id")
-  clientName  String          @default("") @map("client_name") @db.VarChar(255)
-  clientEmail String          @default("") @map("client_email") @db.VarChar(254)
+  clientName  String          @map("client_name") @db.VarChar(255)
+  clientEmail String          @map("client_email") @db.VarChar(254)
   comment     String
-  createdAt   DateTime        @default(now()) @map("created_at")
+  createdAt   DateTime        @map("created_at") @db.Timestamptz(6)
   project     ProposalProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("proposals_proposalclientcomment")
@@ -163,19 +163,19 @@ model AIUsageLog {
   actionType     String            @map("action_type") @db.VarChar(50)
   status         String            @db.VarChar(20)
   promptVersionId BigInt?          @map("prompt_version_id")
-  errorMessage   String            @default("") @map("error_message")
+  errorMessage   String            @map("error_message")
   inputTokens    Int?              @map("input_tokens")
   outputTokens   Int?              @map("output_tokens")
   totalTokens    Int?              @map("total_tokens")
   estimatedCost  Decimal?          @map("estimated_cost") @db.Decimal(10, 6)
-  createdAt      DateTime          @default(now()) @map("created_at")
-  user           DjangoUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime          @map("created_at") @db.Timestamptz(6)
+  user           LocalUser         @relation(fields: [userId], references: [id], onDelete: Cascade)
   project        ProposalProject?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   promptVersion  AIPromptVersion?  @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
 
-  @@index([actionType])
-  @@index([status])
-  @@index([createdAt])
+  @@index([actionType], map: "proposals_aiusagelog_action_type_41a0d6fd_idx")
+  @@index([status], map: "proposals_aiusagelog_status_0bd25afd_idx")
+  @@index([createdAt], map: "proposals_aiusagelog_created_at_0dad7fe6_idx")
   @@index([userId, createdAt], map: "ai_usage_user_created_idx")
   @@index([actionType, createdAt], map: "ai_usage_action_created_idx")
   @@map("proposals_aiusagelog")
@@ -186,15 +186,15 @@ model AIQualityReview {
   projectId         BigInt           @map("project_id")
   userId            Int              @map("user_id")
   proposalVersionId BigInt?          @map("proposal_version_id")
-  score             Int
+  score             Int              @db.SmallInt
   summary           String
-  strengths         Json             @default("[]")
-  weaknesses        Json             @default("[]")
-  recommendations   Json             @default("[]")
+  strengths         Json
+  weaknesses        Json
+  recommendations   Json
   promptVersionId   BigInt?          @map("prompt_version_id")
-  createdAt         DateTime         @default(now()) @map("created_at")
+  createdAt         DateTime         @map("created_at") @db.Timestamptz(6)
   project           ProposalProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user              DjangoUser       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              LocalUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
   proposalVersion   ProposalVersion? @relation(fields: [proposalVersionId], references: [id], onDelete: SetNull)
   promptVersion     AIPromptVersion? @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
 

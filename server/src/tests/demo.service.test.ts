@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ projects: new Map<string, Record<string, unknown>>(), nextProjectId: 1n, nextVersionId: 1n }));
 const tx = vi.hoisted(() => ({
-  userPlan: { upsert: vi.fn() },
+  userPlan: { upsert: vi.fn(), deleteMany: vi.fn() },
   usageRecord: { upsert: vi.fn(), deleteMany: vi.fn() },
   proposalProject: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn(), findUniqueOrThrow: vi.fn() },
   proposalVersion: { deleteMany: vi.fn(), create: vi.fn() },
@@ -10,7 +10,7 @@ const tx = vi.hoisted(() => ({
   aIQualityReview: { deleteMany: vi.fn(), create: vi.fn() }
 }));
 const prismaMock = vi.hoisted(() => ({
-  djangoUser: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
+  localUser: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
   $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx))
 }));
 
@@ -25,7 +25,7 @@ describe("demo workspace seeding", () => {
     state.projects.clear();
     state.nextProjectId = 1n;
     state.nextVersionId = 1n;
-    prismaMock.djangoUser.findFirst.mockResolvedValue({ id: 9, username: "demo-seed-demo", email: "demo@scopeflow.ai" });
+    prismaMock.localUser.findFirst.mockResolvedValue({ id: 9, username: "demo-seed-demo", email: "demo@scopeflow.ai" });
     tx.userPlan.upsert.mockResolvedValue({ plan: "pro" });
     tx.usageRecord.upsert.mockResolvedValue({ aiGenerationsUsed: 50 });
     tx.proposalProject.findMany.mockResolvedValue([]);
@@ -64,5 +64,28 @@ describe("demo workspace seeding", () => {
     expect(tx.proposalVersion.create).toHaveBeenCalledTimes(46);
     expect(tx.aIUsageLog.create).toHaveBeenCalledTimes(16);
     expect(tx.aIQualityReview.create).toHaveBeenCalledTimes(8);
+    expect(tx.proposalProject.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ isDemo: true })
+    }));
+    expect(tx.proposalProject.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ updatedAt: expect.any(Date) })
+    }));
+  });
+
+  it("scopes reset deletion to known demo projects owned by the demo account", async () => {
+    tx.proposalProject.findMany.mockResolvedValue([{ id: 41n }, { id: 42n }]);
+
+    await seedDemoWorkspace({ reset: true });
+
+    expect(tx.proposalProject.findMany).toHaveBeenCalledWith({
+      where: { userId: "demo-seed-demo", isDemo: true },
+      select: { id: true }
+    });
+    expect(tx.proposalProject.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: [41n, 42n] }, userId: "demo-seed-demo", isDemo: true }
+    });
+    expect(tx.aIUsageLog.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 9, projectId: { in: [41n, 42n] } }
+    });
   });
 });

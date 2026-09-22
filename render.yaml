@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: scopeflow-ai-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm ci && npm run prisma:generate && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health/
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: 1
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false

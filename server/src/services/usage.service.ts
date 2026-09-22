@@ -12,15 +12,16 @@ function currentPeriod(): Date {
 
 export async function getCurrentUsage(userId: number, db: PrismaClient | typeof prisma = prisma) {
   const period = currentPeriod();
+  const now = new Date();
   const [plan, usage] = await db.$transaction([
     db.userPlan.upsert({
       where: { userId },
-      create: { userId, plan: "free" },
+      create: { userId, plan: "free", createdAt: now },
       update: {}
     }),
     db.usageRecord.upsert({
       where: { userId_period: { userId, period } },
-      create: { userId, period },
+      create: { userId, period, aiGenerationsUsed: 0, createdAt: now },
       update: {}
     })
   ]);
@@ -38,10 +39,11 @@ export async function getCurrentUsage(userId: number, db: PrismaClient | typeof 
 
 export async function consumeGeneration(userId: number, tx: Prisma.TransactionClient) {
   const period = currentPeriod();
-  const plan = await tx.userPlan.upsert({ where: { userId }, create: { userId, plan: "free" }, update: {} });
+  const now = new Date();
+  const plan = await tx.userPlan.upsert({ where: { userId }, create: { userId, plan: "free", createdAt: now }, update: {} });
   const usage = await tx.usageRecord.upsert({
     where: { userId_period: { userId, period } },
-    create: { userId, period },
+    create: { userId, period, aiGenerationsUsed: 0, createdAt: now },
     update: {}
   });
   if (plan.plan === "business") {
@@ -88,7 +90,8 @@ export async function logAiAction(input: {
       errorMessage: (input.errorMessage ?? "").slice(0, 2000),
       inputTokens: clean(input.tokenUsage?.input_tokens),
       outputTokens: clean(input.tokenUsage?.output_tokens),
-      totalTokens: clean(input.tokenUsage?.total_tokens)
+      totalTokens: clean(input.tokenUsage?.total_tokens),
+      createdAt: new Date()
     }
   });
 }

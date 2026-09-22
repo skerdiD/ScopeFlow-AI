@@ -140,7 +140,7 @@ describe("core project API contract", () => {
     expect(serviceMocks.listProjects).toHaveBeenCalledWith("supabase-owner-id");
   });
 
-  it("creates a project under the token owner and returns the DRF shape", async () => {
+  it("creates a project under the token owner and preserves the API shape", async () => {
     const response = await request(app).post("/api/projects/").send(payload);
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({ id: 12, user_id: "supabase-owner-id", current_version_id: 21 });

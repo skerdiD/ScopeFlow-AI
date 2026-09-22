@@ -6,8 +6,8 @@ import { disconnectPrisma } from "./lib/prisma.js";
 const app = createApp();
 const server = createServer(app);
 
-server.listen(env.PORT, "127.0.0.1", () => {
-  console.log(`ScopeFlow AI API listening on http://127.0.0.1:${env.PORT}${env.API_PREFIX}`);
+server.listen(env.PORT, env.HOST, () => {
+  console.log(`ScopeFlow AI API listening on ${env.HOST}:${env.PORT}${env.API_PREFIX}`);
 });
 
 async function shutdown(signal: NodeJS.Signals) {
