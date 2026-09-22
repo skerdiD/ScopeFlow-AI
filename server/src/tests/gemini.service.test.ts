@@ -23,7 +23,10 @@ describe("Gemini structured output", () => {
         { title: "Build", description: "Implement core features." },
         { title: "Launch", description: "QA and deploy." }
       ],
-      risks: ["Scope expansion", "Delayed feedback"]
+      timeline: ["Discovery in week 1", "Launch in week 6"],
+      pricing: ["Estimated budget: $10,000", "50% due at kickoff"],
+      risks: ["Scope expansion", "Delayed feedback"],
+      next_steps: ["Approve scope", "Schedule kickoff"]
     });
     expect(proposal.scope_of_work).toHaveLength(4);
     expect(proposal.deliverables).toHaveLength(5);
@@ -35,17 +38,20 @@ describe("Gemini structured output", () => {
     expect(() => normalizeGeneratedProposal({ summary: "Only a summary" })).toThrow(GeminiApiResponseError);
   });
 
-  it("adds deterministic risk fallbacks when Gemini omits risks", () => {
-    const proposal = normalizeGeneratedProposal({
+  it("rejects empty required arrays rather than trusting parseable JSON", () => {
+    expect(() => normalizeGeneratedProposal({
       summary: "Build and launch a focused SaaS product.",
       scope_of_work: ["Discovery", "Design", "Build", "QA"],
       deliverables: ["Plan", "Wireframes", "Application", "QA report", "Handover"],
-      milestones: ["Discovery: Confirm scope", "Build: Implement", "Launch: Deploy"],
-      risks: []
+      milestones: [
+        { title: "Discovery", description: "Confirm scope" },
+        { title: "Build", description: "Implement" },
+        { title: "Launch", description: "Deploy" }
+      ],
+      timeline: ["Six weeks"], pricing: ["$10k"], risks: [], next_steps: ["Approve"]
     }, {
       client_name: "Acme", business_type: "SaaS", project_goals: "Launch",
       required_features: "Auth, billing", budget_range: "$10k", timeline: "2 months", call_notes: ""
-    });
-    expect(proposal.risks.length).toBeGreaterThanOrEqual(2);
+    })).toThrow(GeminiApiResponseError);
   });
 });

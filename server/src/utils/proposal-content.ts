@@ -54,6 +54,8 @@ export function buildGeneratedProposalSnapshot(project: Record<string, unknown>)
     timeline: normalizeStringList(project.proposalTimeline),
     pricing: normalizeStringList(project.pricing),
     risks: normalizeStringList(project.risks),
-    next_steps: normalizeStringList(project.nextSteps)
+    next_steps: normalizeStringList(project.nextSteps),
+    generation_source: String(project.generationSource ?? "manual"),
+    generation_degraded: Boolean(project.generationDegraded)
   };
 }

@@ -5,7 +5,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { GenerateProposalPayload } from "@/lib/api";
-import { useAuth } from "@/hooks/use-auth";
 
 type ProposalIntakeFormProps = {
   loading?: boolean;
@@ -30,7 +29,7 @@ export const timelineOptions = [
   "4-6 months",
 ];
 
-export type ProposalIntakeFormValues = Omit<GenerateProposalPayload, "user_id">;
+export type ProposalIntakeFormValues = GenerateProposalPayload;
 
 const defaultFormValues: ProposalIntakeFormValues = {
   client_name: "",
@@ -69,8 +68,6 @@ export function ProposalIntakeForm({
   initialValues,
   prefillKey,
 }: ProposalIntakeFormProps) {
-  const { user } = useAuth();
-
   const [formValues, setFormValues] = useState<ProposalIntakeFormValues>(() =>
     buildInitialValues(initialValues)
   );
@@ -90,7 +87,6 @@ export function ProposalIntakeForm({
     event.preventDefault();
 
     await onSubmit({
-      user_id: user?.id ?? "",
       client_name: formValues.client_name,
       business_type: formValues.business_type,
       project_goals: formValues.project_goals,

@@ -16,7 +16,8 @@ const serviceMocks = vi.hoisted(() => ({
   generateProposal: vi.fn(),
   regenerateSection: vi.fn(),
   reviewQuality: vi.fn(),
-  suggestEdits: vi.fn()
+  suggestEdits: vi.fn(),
+  generateTemplate: vi.fn()
 }));
 
 vi.mock("../middleware/auth.middleware.js", () => ({
@@ -45,7 +46,8 @@ vi.mock("../services/ai-workflow.service.js", () => ({
   generateProposal: serviceMocks.generateProposal,
   regenerateSection: serviceMocks.regenerateSection,
   reviewQuality: serviceMocks.reviewQuality,
-  suggestEdits: serviceMocks.suggestEdits
+  suggestEdits: serviceMocks.suggestEdits,
+  generateTemplate: serviceMocks.generateTemplate
 }));
 
 import { createApp } from "../app.js";
@@ -74,6 +76,8 @@ const project = {
   unclearRequirements: [],
   suggestedQuestions: [],
   generatedProposal: { summary: "Summary" },
+  generationSource: "gemini",
+  generationDegraded: false,
   currentVersionId: 21n,
   status: "draft",
   shareToken: null,
@@ -121,6 +125,9 @@ describe("core project API contract", () => {
       description: "For SaaS projects.",
       category: "SaaS",
       sections: {}
+    });
+    serviceMocks.generateTemplate.mockResolvedValue({
+      name: "SaaS Template", description: "For SaaS projects.", category: "SaaS", sections: {}
     });
     serviceMocks.generateProposal.mockResolvedValue(project);
     serviceMocks.regenerateSection.mockResolvedValue(project);
@@ -195,6 +202,24 @@ describe("core project API contract", () => {
     expect(generated.status).toBe(201);
     expect(generated.body.user_id).toBe("supabase-owner-id");
     expect(reviewed.body).toMatchObject({ id: 30, project: 12, proposal_version: 21, score: 82 });
+  });
+
+  it("rejects oversized AI input before invoking a Gemini workflow", async () => {
+    const generate = await request(app).post("/api/generate/").send({
+      client_name: "Acme", business_type: "SaaS", project_goals: "x".repeat(3001),
+      required_features: "Auth", budget_range: "$10k", timeline: "6 weeks", call_notes: ""
+    });
+    const regenerate = await request(app).post("/api/proposals/12/regenerate-section/").send({
+      section: "scope", instructions: "x".repeat(3001)
+    });
+    const suggestions = await request(app).post("/api/proposals/12/edit-suggestions/").send({
+      section: "scope", content: "x".repeat(20_001)
+    });
+
+    expect([generate.status, regenerate.status, suggestions.status]).toEqual([400, 400, 400]);
+    expect(serviceMocks.generateProposal).not.toHaveBeenCalled();
+    expect(serviceMocks.regenerateSection).not.toHaveBeenCalled();
+    expect(serviceMocks.suggestEdits).not.toHaveBeenCalled();
   });
 
   it("exports owned projects with download headers", async () => {

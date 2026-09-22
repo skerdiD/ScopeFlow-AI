@@ -4,7 +4,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { ProposalProject, ProposalProjectPayload } from "@/lib/api";
-import { useAuth } from "@/hooks/use-auth";
 
 type ProjectFormProps = {
   initialValues?: ProposalProject | null;
@@ -42,8 +41,6 @@ export function ProjectForm({
   loading = false,
   sectionMode = "all"
 }: ProjectFormProps) {
-  const { user } = useAuth();
-
   const startValues = useMemo(
     () => ({
       ...emptyValues,
@@ -64,7 +61,6 @@ export function ProjectForm({
     }
 
     onChange({
-      user_id: user?.id ?? "",
       client_name: formValues.client_name,
       project_name: formValues.project_name,
       project_type: formValues.project_type,
@@ -86,7 +82,7 @@ export function ProjectForm({
       suggested_questions: initialValues?.suggested_questions ?? [],
       status: formValues.status
     });
-  }, [formValues, initialValues, onChange, user?.id]);
+  }, [formValues, initialValues, onChange]);
 
   function setField(name: string, value: string) {
     setFormValues((current) => ({
@@ -99,7 +95,6 @@ export function ProjectForm({
     event.preventDefault();
 
     await onSubmit({
-      user_id: user?.id ?? "",
       client_name: formValues.client_name,
       project_name: formValues.project_name,
       project_type: formValues.project_type,

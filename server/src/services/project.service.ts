@@ -109,6 +109,8 @@ export async function createProjectVersion(
       pricing: project.pricing,
       risks: project.risks,
       nextSteps: project.nextSteps,
+      generationSource: project.generationSource,
+      generationDegraded: project.generationDegraded,
       isFinal,
       createdAt: new Date()
     }
@@ -175,7 +177,14 @@ export async function createProject(owner: ProjectOwner, input: ProjectInput, is
 export async function updateProject(owner: ProjectOwner, projectId: bigint, input: ProjectUpdateInput) {
   return prisma.$transaction(async (tx) => {
     const before = await ownedProject(tx, projectId, owner);
-    const updated = await tx.proposalProject.update({ where: { id: before.id }, data: toProjectData(input) });
+    const contentWasEdited = SECTION_FIELDS.some((field) => {
+      const external = field === "proposalTimeline" ? "proposal_timeline" : field === "nextSteps" ? "next_steps" : field;
+      return external in input;
+    });
+    const updated = await tx.proposalProject.update({
+      where: { id: before.id },
+      data: { ...toProjectData(input), ...(contentWasEdited ? { generationSource: "manual", generationDegraded: false } : {}) }
+    });
     const changed = SECTION_FIELDS.filter((field) => before[field] !== updated[field]);
     if (changed.length) await createProjectVersion(tx, updated, "manual", changed);
     await tx.proposalProject.update({
@@ -203,6 +212,7 @@ export async function restoreVersion(owner: ProjectOwner, projectId: bigint, ver
         summary: version.summary, scope: version.scope, deliverables: version.deliverables,
         milestones: version.milestones, proposalTimeline: version.proposalTimeline,
         pricing: version.pricing, risks: version.risks, nextSteps: version.nextSteps,
+        generationSource: version.generationSource, generationDegraded: version.generationDegraded,
         currentVersionId: version.id,
         generatedProposal: json(buildGeneratedProposalSnapshot(version))
       }

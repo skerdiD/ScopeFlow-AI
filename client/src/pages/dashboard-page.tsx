@@ -105,7 +105,7 @@ export function DashboardPage() {
 
     try {
       setLoading(true);
-      const data = await getProjects(user.id);
+      const data = await getProjects();
       setProjects(data);
       setErrorMessage("");
     } catch (error) {
@@ -279,7 +279,6 @@ export function DashboardPage() {
       setActiveDuplicateId(project.id);
 
       const payload: ProposalProjectPayload = {
-        user_id: project.user_id,
         client_name: project.client_name,
         project_name: `${project.project_name} Copy`,
         project_type: project.project_type,

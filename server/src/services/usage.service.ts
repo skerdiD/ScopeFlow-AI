@@ -59,6 +59,18 @@ export async function consumeGeneration(userId: number, tx: Prisma.TransactionCl
   return { consumed: result.count === 1, status: usageShape(plan.plan, updated.aiGenerationsUsed, period) };
 }
 
+export async function reserveGeneration(userId: number) {
+  return prisma.$transaction((tx) => consumeGeneration(userId, tx));
+}
+
+export async function releaseGeneration(userId: number) {
+  const period = currentPeriod();
+  await prisma.usageRecord.updateMany({
+    where: { userId, period, aiGenerationsUsed: { gt: 0 } },
+    data: { aiGenerationsUsed: { decrement: 1 } }
+  });
+}
+
 function usageShape(plan: string, used: number, period: Date) {
   const isUnlimited = plan === "business";
   const limit = isUnlimited ? null : (PLAN_LIMITS[plan] ?? PLAN_LIMITS.free);

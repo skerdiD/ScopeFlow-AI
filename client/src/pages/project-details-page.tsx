@@ -170,7 +170,7 @@ export function ProjectDetailsPage() {
 
       try {
         setLoading(true);
-        const data = await getProject(id, user.id);
+        const data = await getProject(id);
         setProject(data);
         setSectionDrafts(buildSectionState(data));
         setSelectedVersionId(data.current_version_id ?? data.versions[0]?.id ?? null);
@@ -303,9 +303,9 @@ export function ProjectDetailsPage() {
       generated?.risks && generated.risks.length > 0
         ? generated.risks
         : parseTextList(project.risks);
-    const timeline = parseTextList(project.proposal_timeline);
-    const pricing = parseTextList(project.pricing);
-    const nextSteps = parseTextList(project.next_steps);
+    const timeline = generated?.timeline?.length ? generated.timeline : parseTextList(project.proposal_timeline);
+    const pricing = generated?.pricing?.length ? generated.pricing : parseTextList(project.pricing);
+    const nextSteps = generated?.next_steps?.length ? generated.next_steps : parseTextList(project.next_steps);
 
     return {
       summary,
@@ -348,7 +348,6 @@ export function ProjectDetailsPage() {
     }
 
     return {
-      user_id: user?.id ?? project.user_id,
       client_name: coreDraft?.client_name ?? project.client_name,
       project_name: coreDraft?.project_name ?? project.project_name,
       project_type: coreDraft?.project_type ?? project.project_type,
@@ -909,6 +908,12 @@ export function ProjectDetailsPage() {
       </div>
 
       {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
+
+      {project.generation_degraded ? (
+        <p className="rounded-xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+          This draft was created with a safe fallback because the AI response could not be validated. Review the proposal before sharing it.
+        </p>
+      ) : null}
 
       <Card className="border-border/70 shadow-sm">
         <CardHeader>

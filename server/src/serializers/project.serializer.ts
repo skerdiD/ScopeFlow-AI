@@ -36,6 +36,8 @@ export function serializeVersion(version: VersionRow) {
     pricing: version.pricing,
     risks: version.risks,
     next_steps: version.nextSteps,
+    generation_source: version.generationSource,
+    generation_degraded: version.generationDegraded,
     is_final: version.isFinal,
     created_at: iso(version.createdAt)
   };
@@ -69,6 +71,8 @@ export function serializeProjectListItem(project: ProjectRow) {
     pricing: project.pricing,
     risks: project.risks,
     next_steps: project.nextSteps,
+    generation_source: project.generationSource,
+    generation_degraded: project.generationDegraded,
     payment_url: project.paymentUrl,
     missing_information: project.missingInformation,
     scope_risks: project.scopeRisks,
@@ -121,6 +125,8 @@ export function serializePublicProject(project: ProjectWithRelations) {
       pricing: source.pricing,
       risks: source.risks,
       next_steps: source.nextSteps,
+      generation_source: source.generationSource,
+      generation_degraded: source.generationDegraded,
       source_label: finalVersion?.label ?? "current"
     }
   };

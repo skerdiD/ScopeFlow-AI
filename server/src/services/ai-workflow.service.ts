@@ -7,10 +7,11 @@ import {
   generateQualityReview,
   generateSectionRegeneration,
   generateStructuredProposal,
+  generateTemplateDraft,
   type GeneratedProposal
 } from "./gemini.service.js";
 import { createProjectVersion, detailInclude, getProject } from "./project.service.js";
-import { canGenerate, consumeGeneration, logAiAction } from "./usage.service.js";
+import { logAiAction, releaseGeneration, reserveGeneration } from "./usage.service.js";
 
 const AI_SECTION_TO_FIELD = {
   scope: "scope",
@@ -38,12 +39,21 @@ function generatedFields(generated: GeneratedProposal) {
     scope: generated.scope_of_work.map((item) => `- ${item}`).join("\n"),
     deliverables: generated.deliverables.map((item) => `- ${item}`).join("\n"),
     milestones: generated.milestones.map((item) => `${item.title}: ${item.description}`).join("\n"),
-    proposalTimeline: "",
-    pricing: "",
+    proposalTimeline: generated.timeline.map((item) => `- ${item}`).join("\n"),
+    pricing: generated.pricing.map((item) => `- ${item}`).join("\n"),
     risks: generated.risks.map((item) => `- ${item}`).join("\n"),
-    nextSteps: "",
+    nextSteps: generated.next_steps.map((item) => `- ${item}`).join("\n"),
     generatedProposal: generated as unknown as Prisma.InputJsonValue
   };
+}
+
+async function reserveOrThrow(userId: number) {
+  const reservation = await reserveGeneration(userId);
+  if (!reservation.consumed) throw new ApiError(429, "Generation limit reached.", {
+    detail: "You have reached your monthly AI generation limit. Upgrade to run more AI actions.",
+    usage: reservation.status
+  });
+  return reservation;
 }
 
 function context(project: Awaited<ReturnType<typeof getProject>>) {
@@ -65,12 +75,16 @@ function context(project: Awaited<ReturnType<typeof getProject>>) {
   };
 }
 
+function validatedContext(project: Awaited<ReturnType<typeof getProject>>) {
+  const value = context(project);
+  if (JSON.stringify(value).length > 30_000) {
+    throw new ApiError(400, "Proposal content exceeds the 30000 character limit for AI actions.");
+  }
+  return value;
+}
+
 export async function generateProposal(user: Express.AuthenticatedUser, input: GenerateInput) {
-  const initialUsage = await canGenerate(user.id);
-  if (!initialUsage.allowed) throw new ApiError(429, "Generation limit reached.", {
-    detail: "You have reached your monthly AI generation limit. Upgrade to generate more proposals.",
-    usage: initialUsage.status
-  });
+  await reserveOrThrow(user.id);
   const intake = {
     client_name: input.client_name,
     business_type: input.business_type,
@@ -83,20 +97,11 @@ export async function generateProposal(user: Express.AuthenticatedUser, input: G
   let result: Awaited<ReturnType<typeof generateStructuredProposal>>;
   try { result = await generateStructuredProposal(intake); }
   catch (error) {
+    await releaseGeneration(user.id);
     await logAiAction({ userId: user.id, actionType: "full_proposal_generation", status: "failure", errorMessage: String(error) });
     throw error;
   }
   const outcome = await prisma.$transaction(async (tx) => {
-    const usage = await consumeGeneration(user.id, tx);
-    if (!usage.consumed) {
-      await logAiAction({
-        userId: user.id, actionType: "full_proposal_generation", status: "failure",
-        promptVersionId: result.promptVersion?.id,
-        errorMessage: "Monthly AI generation limit reached before saving generated proposal.",
-        tokenUsage: result.tokenUsage
-      }, tx);
-      return { limited: usage.status } as const;
-    }
     const requirements = [
       `Project goals: ${input.project_goals}`,
       input.required_features ? `Required features: ${input.required_features}` : "",
@@ -124,6 +129,8 @@ export async function generateProposal(user: Express.AuthenticatedUser, input: G
         clientResponseComment: "",
         isDemo: false,
         createdAt: new Date(),
+        generationSource: result.generationSource,
+        generationDegraded: result.generationDegraded,
         ...generatedFields(result.data)
       }
     });
@@ -132,27 +139,26 @@ export async function generateProposal(user: Express.AuthenticatedUser, input: G
       userId: user.id, projectId: project.id, actionType: "full_proposal_generation", status: "success",
       promptVersionId: result.promptVersion?.id, tokenUsage: result.tokenUsage
     }, tx);
-    return { project: await tx.proposalProject.findUniqueOrThrow({ where: { id: project.id }, include: detailInclude }) } as const;
+    return tx.proposalProject.findUniqueOrThrow({ where: { id: project.id }, include: detailInclude });
   });
-  if ("limited" in outcome) throw new ApiError(429, "Generation limit reached.", {
-    detail: "You have reached your monthly AI generation limit. Upgrade to generate more proposals.", usage: outcome.limited
-  });
-  return outcome.project;
+  return outcome;
 }
 
 export async function regenerateSection(user: Express.AuthenticatedUser, projectId: bigint, section: keyof typeof AI_SECTION_TO_FIELD, instructions: string) {
   const project = await getProject(user, projectId);
+  await reserveOrThrow(user.id);
   const field = AI_SECTION_TO_FIELD[section];
   let result: Awaited<ReturnType<typeof generateSectionRegeneration>>;
-  try { result = await generateSectionRegeneration(context(project), section, instructions); }
+  try { result = await generateSectionRegeneration(validatedContext(project), section, instructions); }
   catch (error) {
+    await releaseGeneration(user.id);
     await logAiAction({ userId: user.id, projectId, actionType: "section_regeneration", status: "failure", errorMessage: String(error) });
     throw error;
   }
   return prisma.$transaction(async (tx) => {
     const updated = await tx.proposalProject.update({
       where: { id: project.id },
-      data: { [field]: result.content }
+      data: { [field]: result.content, generationSource: "gemini", generationDegraded: false }
     });
     await tx.proposalProject.update({
       where: { id: project.id },
@@ -169,9 +175,11 @@ export async function regenerateSection(user: Express.AuthenticatedUser, project
 
 export async function reviewQuality(user: Express.AuthenticatedUser, projectId: bigint) {
   const project = await getProject(user, projectId);
+  await reserveOrThrow(user.id);
   let result: Awaited<ReturnType<typeof generateQualityReview>>;
-  try { result = await generateQualityReview(context(project)); }
+  try { result = await generateQualityReview(validatedContext(project)); }
   catch (error) {
+    await releaseGeneration(user.id);
     await logAiAction({ userId: user.id, projectId, actionType: "quality_score", status: "failure", errorMessage: String(error) });
     throw error;
   }
@@ -194,8 +202,22 @@ export async function reviewQuality(user: Express.AuthenticatedUser, projectId: 
   });
 }
 
+export async function generateTemplate(user: Express.AuthenticatedUser, prompt: string, categories: string[]) {
+  await reserveOrThrow(user.id);
+  try {
+    const output = await generateTemplateDraft(prompt, categories);
+    await logAiAction({ userId: user.id, actionType: "template_generation", status: "success" });
+    return output;
+  } catch (error) {
+    await releaseGeneration(user.id);
+    await logAiAction({ userId: user.id, actionType: "template_generation", status: "failure", errorMessage: String(error) });
+    throw error;
+  }
+}
+
 export async function suggestEdits(user: Express.AuthenticatedUser, projectId: bigint, section: string, content: string) {
   await getProject(user, projectId);
+  await reserveOrThrow(user.id);
   try {
     const result = await generateEditSuggestions(section, content);
     await logAiAction({
@@ -204,6 +226,7 @@ export async function suggestEdits(user: Express.AuthenticatedUser, projectId: b
     });
     return result.output;
   } catch (error) {
+    await releaseGeneration(user.id);
     await logAiAction({ userId: user.id, projectId, actionType: "edit_suggestions", status: "failure", errorMessage: String(error) });
     throw error;
   }

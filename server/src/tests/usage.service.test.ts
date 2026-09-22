@@ -48,4 +48,28 @@ describe("usage service", () => {
       data: { aiGenerationsUsed: { increment: 1 } }
     }));
   });
+
+  it("allows only one of two concurrent reservations near the limit", async () => {
+    let used = 2;
+    const tx = {
+      userPlan: { upsert: vi.fn().mockResolvedValue({ plan: "free" }) },
+      usageRecord: {
+        upsert: vi.fn().mockImplementation(async () => ({ id: 10n, aiGenerationsUsed: used })),
+        updateMany: vi.fn().mockImplementation(async () => {
+          if (used >= 3) return { count: 0 };
+          used += 1;
+          return { count: 1 };
+        }),
+        findUniqueOrThrow: vi.fn().mockImplementation(async () => ({ id: 10n, aiGenerationsUsed: used }))
+      }
+    };
+
+    const results = await Promise.all([
+      consumeGeneration(7, tx as never),
+      consumeGeneration(7, tx as never)
+    ]);
+
+    expect(results.filter((result) => result.consumed)).toHaveLength(1);
+    expect(used).toBe(3);
+  });
 });

@@ -97,6 +97,8 @@ model ProposalProject {
   unclearRequirements   Json                    @map("unclear_requirements")
   suggestedQuestions    Json                    @map("suggested_questions")
   generatedProposal     Json                    @map("generated_proposal")
+  generationSource      String                  @default("manual") @map("generation_source") @db.VarChar(20)
+  generationDegraded    Boolean                 @default(false) @map("generation_degraded")
   currentVersionId      BigInt?                 @map("current_version_id")
   status                String                  @db.VarChar(50)
   shareToken            String?                 @unique @map("share_token") @db.VarChar(64)
@@ -141,6 +143,8 @@ model ProposalVersion {
   pricing           String
   risks             String
   nextSteps         String            @map("next_steps")
+  generationSource  String            @default("manual") @map("generation_source") @db.VarChar(20)
+  generationDegraded Boolean          @default(false) @map("generation_degraded")
   isFinal           Boolean           @map("is_final")
   createdAt         DateTime          @map("created_at") @db.Timestamptz(6)
   project           ProposalProject   @relation("ProjectVersions", fields: [projectId], references: [id], onDelete: Cascade)

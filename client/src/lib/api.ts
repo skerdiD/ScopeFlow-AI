@@ -31,7 +31,12 @@ export type GeneratedProposalContent = {
   scope_of_work: string[];
   deliverables: string[];
   milestones: GeneratedMilestone[];
+  timeline: string[];
+  pricing: string[];
   risks: string[];
+  next_steps: string[];
+  generation_source?: "gemini" | "fallback" | "manual";
+  generation_degraded?: boolean;
 };
 
 export type ProposalVersion = {
@@ -49,6 +54,8 @@ export type ProposalVersion = {
   pricing: string;
   risks: string;
   next_steps: string;
+  generation_source: "gemini" | "fallback" | "manual";
+  generation_degraded: boolean;
   is_final: boolean;
   created_at: string;
 };
@@ -70,6 +77,8 @@ export type ProposalProject = {
   pricing: string;
   risks: string;
   next_steps: string;
+  generation_source: "gemini" | "fallback" | "manual";
+  generation_degraded: boolean;
   payment_url: string;
   missing_information: string[];
   scope_risks: string[];
@@ -130,7 +139,6 @@ export type PublicProposal = {
 };
 
 export type ProposalProjectPayload = {
-  user_id: string;
   client_name: string;
   project_name: string;
   project_type: string;
@@ -156,7 +164,6 @@ export type ProposalProjectPayload = {
 export type ExportFormat = "pdf" | "docx";
 
 export type GenerateProposalPayload = {
-  user_id: string;
   client_name: string;
   business_type: string;
   project_goals: string;
@@ -271,15 +278,13 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function getProjects(userId: string): Promise<ProposalProjectListItem[]> {
-  void userId;
+export async function getProjects(): Promise<ProposalProjectListItem[]> {
   const headers = await createAuthHeaders();
   const response = await fetch(`${getApiBaseUrl()}/projects/`, { headers });
   return handleResponse<ProposalProjectListItem[]>(response);
 }
 
-export async function getProject(id: string, userId: string): Promise<ProposalProject> {
-  void userId;
+export async function getProject(id: string): Promise<ProposalProject> {
   const headers = await createAuthHeaders();
   const response = await fetch(`${getApiBaseUrl()}/projects/${id}/`, { headers });
   return handleResponse<ProposalProject>(response);

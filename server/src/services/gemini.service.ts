@@ -6,7 +6,11 @@ const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models
 
 export class GeminiServiceError extends Error {}
 export class GeminiApiKeyMissingError extends GeminiServiceError {}
-export class GeminiApiRequestError extends GeminiServiceError {}
+export class GeminiApiRequestError extends GeminiServiceError {
+  constructor(message: string, readonly retryable = false, readonly retryAfterMs?: number) {
+    super(message);
+  }
+}
 export class GeminiApiResponseError extends GeminiServiceError {}
 export class GeminiQuotaExceededError extends GeminiApiRequestError {}
 export class GeminiApiKeyLeakedError extends GeminiApiRequestError {}
@@ -19,6 +23,24 @@ export type TokenUsage = {
 
 type GeminiResult = { data: Record<string, unknown>; tokenUsage: TokenUsage };
 type Intake = Record<"client_name" | "business_type" | "project_goals" | "required_features" | "budget_range" | "timeline" | "call_notes", string>;
+
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 250;
+const MAX_RETRY_DELAY_MS = 5_000;
+
+function retryAfterMilliseconds(response: Response): number | undefined {
+  const value = response.headers?.get?.("retry-after")?.trim();
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1_000, MAX_RETRY_DELAY_MS);
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.min(Math.max(0, date - Date.now()), MAX_RETRY_DELAY_MS) : undefined;
+}
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
 
 function extractFirstObject(value: string): string {
   const start = value.indexOf("{");
@@ -68,7 +90,7 @@ export function cleanJsonText(rawText: string): Record<string, unknown> {
   throw new GeminiApiResponseError("Gemini returned invalid JSON.");
 }
 
-export async function callGeminiJson(prompt: string, temperature: number, maxOutputTokens: number): Promise<GeminiResult> {
+async function callGeminiOnce(prompt: string, temperature: number, maxOutputTokens: number): Promise<GeminiResult> {
   if (!env.GEMINI_API_KEY) throw new GeminiApiKeyMissingError("GEMINI_API_KEY is missing.");
   const url = `${GEMINI_API_BASE}/${encodeURIComponent(env.GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
   let response: Response;
@@ -80,10 +102,10 @@ export async function callGeminiJson(prompt: string, temperature: number, maxOut
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: { temperature, maxOutputTokens, responseMimeType: "application/json" }
       }),
-      signal: AbortSignal.timeout(75_000)
+      signal: AbortSignal.timeout(20_000)
     });
   } catch {
-    throw new GeminiApiRequestError("Failed to call Gemini API.");
+    throw new GeminiApiRequestError("Failed to call Gemini API.", true);
   }
   if (!response.ok) {
     let message = "";
@@ -94,12 +116,16 @@ export async function callGeminiJson(prompt: string, temperature: number, maxOut
     } catch { message = rawError.slice(0, 500); }
     const normalized = message.toLowerCase();
     if (response.status === 429 || normalized.includes("quota exceeded")) {
-      throw new GeminiQuotaExceededError("Gemini quota exceeded for this API project.");
+      throw new GeminiQuotaExceededError("Gemini quota exceeded for this API project.", true, retryAfterMilliseconds(response));
     }
     if (response.status === 403 && normalized.includes("reported as leaked")) {
       throw new GeminiApiKeyLeakedError("GEMINI_API_KEY has been blocked as leaked.");
     }
-    throw new GeminiApiRequestError(`Gemini API request failed with status ${response.status}.`);
+    throw new GeminiApiRequestError(
+      `Gemini API request failed with status ${response.status}.`,
+      RETRYABLE_STATUS.has(response.status),
+      retryAfterMilliseconds(response)
+    );
   }
   let payload: Record<string, unknown>;
   try { payload = await response.json() as Record<string, unknown>; }
@@ -122,6 +148,21 @@ export async function callGeminiJson(prompt: string, temperature: number, maxOut
       total_tokens: token(usage.totalTokenCount)
     }
   };
+}
+
+export async function callGeminiJson(prompt: string, temperature: number, maxOutputTokens: number): Promise<GeminiResult> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await callGeminiOnce(prompt, temperature, maxOutputTokens);
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof GeminiApiRequestError) || !error.retryable || attempt === MAX_ATTEMPTS - 1) throw error;
+      const backoff = error.retryAfterMs ?? RETRY_DELAY_MS * (2 ** attempt);
+      await wait(Math.min(backoff, MAX_RETRY_DELAY_MS));
+    }
+  }
+  throw lastError;
 }
 
 function truncateWords(value: string, maximum: number): string {
@@ -190,23 +231,40 @@ export type GeneratedProposal = {
   scope_of_work: string[];
   deliverables: string[];
   milestones: Array<{ title: string; description: string }>;
+  timeline: string[];
+  pricing: string[];
   risks: string[];
+  next_steps: string[];
 };
 
+const generatedProposalSchema = z.object({
+  summary: z.string().trim().min(1).max(4_000),
+  scope_of_work: z.array(z.string().trim().min(1).max(600)).min(4).max(8),
+  deliverables: z.array(z.string().trim().min(1).max(600)).min(5).max(8),
+  milestones: z.array(z.object({
+    title: z.string().trim().min(1).max(160),
+    description: z.string().trim().min(1).max(600)
+  })).min(3).max(5),
+  timeline: z.array(z.string().trim().min(1).max(600)).min(1).max(8),
+  pricing: z.array(z.string().trim().min(1).max(600)).min(1).max(8),
+  risks: z.array(z.string().trim().min(1).max(600)).min(2).max(4),
+  next_steps: z.array(z.string().trim().min(1).max(600)).min(1).max(6)
+}).strict();
+
 export function normalizeGeneratedProposal(data: Record<string, unknown>, intake?: Intake): GeneratedProposal {
-  const summary = truncateWords(String(data.summary ?? "").replace(/\s+/g, " ").trim(), 80);
-  if (!summary) throw new GeminiApiResponseError("Gemini returned an empty summary.");
-  const scope = requireCount(stringList(data.scope_of_work, 18), 4, 8, "scope_of_work");
-  const deliverables = requireCount(stringList(data.deliverables, 16), 5, 8, "deliverables");
-  const normalizedMilestones = requireCount(milestones(data.milestones), 3, 5, "milestones");
-  const risks = stringList(data.risks, 18);
-  if (intake && risks.length < 2) {
-    for (const fallback of fallbackRisks(intake)) {
-      if (!risks.some((risk) => risk.toLowerCase() === fallback.toLowerCase())) risks.push(fallback);
-      if (risks.length >= 4) break;
-    }
-  }
-  return { summary, scope_of_work: scope, deliverables, milestones: normalizedMilestones, risks: requireCount(risks, 2, 4, "risks") };
+  void intake;
+  const parsed = generatedProposalSchema.safeParse(data);
+  if (!parsed.success) throw new GeminiApiResponseError("Gemini returned an invalid proposal structure.");
+  return {
+    summary: truncateWords(parsed.data.summary.replace(/\s+/g, " "), 80),
+    scope_of_work: parsed.data.scope_of_work.map((item) => truncateWords(item, 18)),
+    deliverables: parsed.data.deliverables.map((item) => truncateWords(item, 16)),
+    milestones: parsed.data.milestones.map((item) => ({ title: truncateWords(item.title, 8), description: truncateWords(item.description, 22) })),
+    timeline: parsed.data.timeline.map((item) => truncateWords(item, 20)),
+    pricing: parsed.data.pricing.map((item) => truncateWords(item, 24)),
+    risks: parsed.data.risks.map((item) => truncateWords(item, 18)),
+    next_steps: parsed.data.next_steps.map((item) => truncateWords(item, 18))
+  };
 }
 
 function fallbackProposal(intake: Intake): GeneratedProposal {
@@ -222,12 +280,15 @@ function fallbackProposal(intake: Intake): GeneratedProposal {
       { title: "Validation", description: "Complete QA, revisions, and acceptance preparation." },
       { title: "Launch", description: "Release the project and provide handover documentation." }
     ],
-    risks: fallbackRisks(intake)
+    timeline: [intake.timeline ? `Target delivery: ${intake.timeline}` : "Delivery timing will be confirmed during kickoff.", "Review checkpoints will follow each major milestone."],
+    pricing: [intake.budget_range ? `Estimated budget: ${intake.budget_range}` : "Pricing will be confirmed after scope approval.", "Payment schedule will be agreed before work begins."],
+    risks: fallbackRisks(intake),
+    next_steps: ["Review and approve the proposed scope.", "Confirm the project owner and decision makers.", "Schedule the project kickoff."]
   };
 }
 
 function proposalPrompt(intake: Intake): string {
-  const shape = { summary: "string", scope_of_work: ["string"], deliverables: ["string"], milestones: [{ title: "string", description: "string" }], risks: ["string"] };
+  const shape = { summary: "string", scope_of_work: ["string"], deliverables: ["string"], milestones: [{ title: "string", description: "string" }], timeline: ["string"], pricing: ["string"], risks: ["string"], next_steps: ["string"] };
   return `You are a senior digital agency strategist writing a proposal for ${intake.client_name || "the client"}.
 Rewrite rough intake notes into a concise, client-ready proposal.
 Write like a sharp freelancer or agency lead: practical, clear, and commercially aware.
@@ -255,11 +316,17 @@ Content rules:
   - 3 to 5 milestones in logical sequence from discovery to launch/handover.
   - Titles must be short and actionable.
   - Descriptions should be brief and outcome-focused.
+- timeline:
+  - 1 to 8 concise phase or timing statements grounded in the supplied timeline.
+- pricing:
+  - 1 to 8 concise commercial statements grounded in the supplied budget; do not invent exact prices.
 - risks:
   - 2 to 4 practical risks/assumptions.
   - Keep each risk concise and specific to likely delivery constraints.
   - Typical risk themes: scope expansion, delayed feedback, unclear requirements, third-party dependency delays.
   - Never return an empty risks list.
+- next_steps:
+  - 1 to 6 specific actions needed to approve and start the work.
 
 Writing quality rules:
 - Use modern, direct business language.
@@ -300,10 +367,11 @@ export async function generateStructuredProposal(intake: Intake) {
   const prompt = promptVersion ? render(promptVersion.promptText, { ...intake, intake_json: JSON.stringify(intake) }) : proposalPrompt(intake);
   try {
     const result = await callGeminiJson(prompt, 0.2, 900);
-    return { data: normalizeGeneratedProposal(result.data, intake), tokenUsage: result.tokenUsage, promptVersion };
+    return { data: normalizeGeneratedProposal(result.data, intake), tokenUsage: result.tokenUsage, promptVersion, generationSource: "gemini" as const, generationDegraded: false };
   } catch (error) {
     if (!(error instanceof GeminiApiResponseError)) throw error;
-    return { data: fallbackProposal(intake), tokenUsage: {}, promptVersion };
+    console.warn("Gemini proposal output failed validation; using deterministic fallback.");
+    return { data: fallbackProposal(intake), tokenUsage: {}, promptVersion, generationSource: "fallback" as const, generationDegraded: true };
   }
 }
 
@@ -319,41 +387,64 @@ async function purposePrompt(purpose: string, fallback: string) {
 export async function generateSectionRegeneration(context: Record<string, unknown>, section: string, instructions = "") {
   const { promptVersion, text } = await purposePrompt("section_regeneration", sectionPrompt);
   const result = await callGeminiJson(render(text, { section, instructions: instructions || "Improve clarity and client readiness.", project_json: JSON.stringify(context) }), 0.25, 700);
-  const content = String(result.data.content ?? "").trim();
-  if (!content) throw new GeminiApiResponseError("Gemini returned an empty regenerated section.");
-  return { content, tokenUsage: result.tokenUsage, promptVersion };
+  const parsed = z.object({ content: z.string().trim().min(1).max(12_000) }).strict().safeParse(result.data);
+  if (!parsed.success) throw new GeminiApiResponseError("Gemini returned an invalid regenerated section.");
+  return { content: parsed.data.content, tokenUsage: result.tokenUsage, promptVersion };
 }
 
 export async function generateQualityReview(context: Record<string, unknown>) {
   const { promptVersion, text } = await purposePrompt("quality_review", reviewPrompt);
   const result = await callGeminiJson(render(text, { project_json: JSON.stringify(context) }), 0.2, 900);
-  const parsedScore = Number(result.data.score);
-  if (!Number.isInteger(parsedScore)) throw new GeminiApiResponseError("Gemini returned an invalid quality review score.");
+  const parsed = z.object({
+    score: z.number().int().min(0).max(100),
+    summary: z.string().trim().min(1).max(2_000),
+    strengths: z.array(z.string().trim().min(1).max(500)).min(1).max(6),
+    weaknesses: z.array(z.string().trim().min(1).max(500)).min(1).max(6),
+    recommendations: z.array(z.string().trim().min(1).max(500)).min(1).max(6)
+  }).strict().safeParse(result.data);
+  if (!parsed.success) throw new GeminiApiResponseError("Gemini returned an invalid quality review.");
   const review = {
-    score: Math.max(0, Math.min(100, parsedScore)),
-    summary: truncateWords(String(result.data.summary ?? "").trim(), 45),
-    strengths: stringList(result.data.strengths, 18).slice(0, 6),
-    weaknesses: stringList(result.data.weaknesses, 18).slice(0, 6),
-    recommendations: stringList(result.data.recommendations, 18).slice(0, 6)
+    score: parsed.data.score,
+    summary: truncateWords(parsed.data.summary, 45),
+    strengths: parsed.data.strengths.map((item) => truncateWords(item, 18)),
+    weaknesses: parsed.data.weaknesses.map((item) => truncateWords(item, 18)),
+    recommendations: parsed.data.recommendations.map((item) => truncateWords(item, 18))
   };
-  if (!review.summary) throw new GeminiApiResponseError("Gemini returned an empty quality review summary.");
   return { review, tokenUsage: result.tokenUsage, promptVersion };
 }
 
 export async function generateEditSuggestions(section: string, content: string) {
   const { promptVersion, text } = await purposePrompt("edit_suggestions", editPrompt);
   const result = await callGeminiJson(render(text, { section, content }), 0.25, 800);
-  const suggestions = z.array(z.object({ type: z.coerce.string().default("clarity"), message: z.coerce.string().min(1) })).safeParse(result.data.suggestions);
-  const output = {
-    summary: truncateWords(String(result.data.summary ?? "").trim(), 35),
-    suggestions: suggestions.success ? suggestions.data.slice(0, 6) : [],
-    improved_example: String(result.data.improved_example ?? "").trim()
-  };
-  if (!output.summary || !output.suggestions.length) throw new GeminiApiResponseError("Gemini returned incomplete edit suggestions.");
+  const parsed = z.object({
+    summary: z.string().trim().min(1).max(2_000),
+    suggestions: z.array(z.object({ type: z.string().trim().min(1).max(80), message: z.string().trim().min(1).max(600) }).strict()).min(1).max(6),
+    improved_example: z.string().trim().min(1).max(12_000)
+  }).strict().safeParse(result.data);
+  if (!parsed.success) throw new GeminiApiResponseError("Gemini returned incomplete edit suggestions.");
+  const output = { ...parsed.data, summary: truncateWords(parsed.data.summary, 35) };
   return { output, tokenUsage: result.tokenUsage, promptVersion };
 }
 
 const templateSections = ["summary", "scope", "deliverables", "milestones", "timeline", "assumptions", "risks"] as const;
+const templateSectionSchema = z.object({
+  included: z.boolean(),
+  content: z.string().trim().max(8_000)
+}).strict();
+const templateResponseSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  description: z.string().trim().min(1).max(1_000),
+  category: z.string().trim().min(1).max(120),
+  sections: z.object({
+    summary: templateSectionSchema,
+    scope: templateSectionSchema,
+    deliverables: templateSectionSchema,
+    milestones: templateSectionSchema,
+    timeline: templateSectionSchema,
+    assumptions: templateSectionSchema,
+    risks: templateSectionSchema
+  }).strict()
+}).strict();
 function templateFallback(userPrompt: string, categories: string[]) {
   const lower = userPrompt.toLowerCase();
   const archetype = lower.match(/saas|mvp|startup/) ? "SaaS" : lower.match(/shop|store|e-?commerce/) ? "E-commerce" : lower.match(/dashboard|internal/) ? "Internal Tools" : lower.match(/marketing|campaign/) ? "Marketing" : "Web Design";
@@ -417,25 +508,22 @@ Style constraints:
 
 User prompt:
 ${sparsePrompt}`;
-  let data: Record<string, unknown> = {};
-  try { data = (await callGeminiJson(prompt, 0.4, 1200)).data; } catch (error) {
+  let parsed: z.infer<typeof templateResponseSchema> | null = null;
+  try {
+    const result = await callGeminiJson(prompt, 0.4, 1200);
+    const validation = templateResponseSchema.safeParse(result.data);
+    if (validation.success) parsed = validation.data;
+    else console.warn("Gemini template output failed validation; using deterministic fallback.");
+  } catch (error) {
     if (!(error instanceof GeminiServiceError)) throw error;
+    console.warn("Gemini template generation failed; using deterministic fallback.");
   }
-  const root = data && typeof data === "object" ? data : {};
-  const sections = root.sections && typeof root.sections === "object" ? root.sections as Record<string, unknown> : {};
-  const normalizedSections = Object.fromEntries(templateSections.map((key) => {
-    const raw = sections[key] && typeof sections[key] === "object" ? sections[key] as Record<string, unknown> : {};
-    const fallbackSection = fallback.sections[key];
-    return [key, {
-      included: typeof raw.included === "boolean" ? raw.included : fallbackSection.included,
-      content: String(raw.content ?? "").trim() || fallbackSection.content
-    }];
-  }));
+  if (!parsed) return fallback;
   return {
-    name: truncateWords(String(root.name ?? "").trim() || fallback.name, 5),
-    description: String(root.description ?? "").trim() || fallback.description,
-    category: String(root.category ?? "").trim() || fallback.category,
-    sections: normalizedSections
+    name: truncateWords(parsed.name, 5),
+    description: parsed.description,
+    category: parsed.category,
+    sections: parsed.sections
   };
 }
 
