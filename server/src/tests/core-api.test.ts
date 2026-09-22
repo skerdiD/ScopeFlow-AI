@@ -79,6 +79,7 @@ const project = {
   shareToken: null,
   shareEnabled: false,
   shareCreatedAt: null,
+  shareExpiresAt: null,
   viewedAt: null,
   clientNameResponse: "",
   clientEmailResponse: "",

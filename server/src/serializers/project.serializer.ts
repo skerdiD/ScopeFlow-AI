@@ -89,6 +89,7 @@ export function serializeProject(project: ProjectWithRelations) {
     share_token: project.shareToken,
     share_enabled: project.shareEnabled,
     share_created_at: iso(project.shareCreatedAt),
+    share_expires_at: iso(project.shareExpiresAt),
     viewed_at: iso(project.viewedAt),
     client_name_response: project.clientNameResponse,
     client_email_response: project.clientEmailResponse,

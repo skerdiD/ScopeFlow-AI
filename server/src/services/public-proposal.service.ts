@@ -3,9 +3,17 @@ import { prisma } from "../lib/prisma.js";
 import { ApiError } from "../middleware/error.middleware.js";
 import { detailInclude } from "./project.service.js";
 
-async function sharedProject(token: string) {
-  const project = await prisma.proposalProject.findFirst({
-    where: { shareToken: token, shareEnabled: true, isDemo: false },
+type DatabaseClient = typeof prisma | Prisma.TransactionClient;
+
+async function sharedProject(token: string, db: DatabaseClient = prisma) {
+  if (!token || token.length > 64) throw new ApiError(404, "Not found.");
+  const project = await db.proposalProject.findFirst({
+    where: {
+      shareToken: token,
+      shareEnabled: true,
+      shareExpiresAt: { gt: new Date() },
+      isDemo: false
+    },
     include: detailInclude
   });
   if (!project) throw new ApiError(404, "Not found.");
@@ -33,20 +41,35 @@ export async function respondToPublicProject(token: string, input: {
   client_email: string;
   comment: string;
 }) {
-  const project = await sharedProject(token);
   const now = new Date();
   await prisma.$transaction(async (tx) => {
-    await tx.proposalProject.update({
-      where: { id: project.id },
+    const project = await sharedProject(token, tx);
+    const updated = await tx.proposalProject.updateMany({
+      where: {
+        id: project.id,
+        shareEnabled: true,
+        shareExpiresAt: { gt: now },
+        approvedAt: null,
+        rejectedAt: null,
+        status: { notIn: ["approved", "rejected"] }
+      },
       data: {
         status: input.status,
         clientNameResponse: input.client_name,
         clientEmailResponse: input.client_email,
         clientResponseComment: input.comment,
-        approvedAt: input.status === "approved" ? now : null,
-        rejectedAt: input.status === "rejected" ? now : null
+        approvedAt: input.status === "approved" ? now : undefined,
+        rejectedAt: input.status === "rejected" ? now : undefined
       }
     });
+    if (updated.count === 0) {
+      const stillShared = await tx.proposalProject.findFirst({
+        where: { id: project.id, shareEnabled: true, shareExpiresAt: { gt: new Date() }, isDemo: false },
+        select: { id: true }
+      });
+      if (!stillShared) throw new ApiError(404, "Not found.");
+      throw new ApiError(409, "A final response has already been recorded.");
+    }
     if (input.comment.trim()) {
       await tx.proposalClientComment.create({
         data: {
@@ -67,14 +90,16 @@ export async function addPublicComment(token: string, input: {
   client_email: string;
   comment: string;
 }) {
-  const project = await sharedProject(token);
-  return prisma.proposalClientComment.create({
-    data: {
-      projectId: project.id,
-      clientName: input.client_name,
-      clientEmail: input.client_email,
-      comment: input.comment,
-      createdAt: new Date()
-    }
+  return prisma.$transaction(async (tx) => {
+    const project = await sharedProject(token, tx);
+    return tx.proposalClientComment.create({
+      data: {
+        projectId: project.id,
+        clientName: input.client_name,
+        clientEmail: input.client_email,
+        comment: input.comment,
+        createdAt: new Date()
+      }
+    });
   });
 }

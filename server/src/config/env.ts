@@ -21,6 +21,12 @@ function normalizeOrigin(value: string | undefined): string | null {
   return `https://${trimmed}`;
 }
 
+const optionalUrl = z.preprocess(
+  (value) => typeof value === "string" && !value.trim() ? undefined : value,
+  z.string().url().optional()
+);
+const rateValue = z.string().regex(/^\d+\/(min|minute|hour)$/i, "Use a value such as 120/min or 30/hour.");
+
 const rawEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().trim().min(1).default("0.0.0.0"),
@@ -37,12 +43,16 @@ const rawEnvSchema = z.object({
   VITE_SUPABASE_ANON_KEY: z.string().optional(),
   VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY: z.string().optional(),
   SUPABASE_AUTH_CACHE_TTL: z.coerce.number().int().min(0).default(30),
+  SUPABASE_AUTH_CACHE_MAX_ENTRIES: z.coerce.number().int().positive().default(1000),
   JSON_BODY_LIMIT: z.string().default("1mb"),
-  RATE_LIMIT_ANON: z.string().default("120/min"),
-  RATE_LIMIT_USER: z.string().default("600/min"),
-  RATE_LIMIT_GENERATE_PROPOSAL: z.string().default("30/hour"),
-  RATE_LIMIT_GENERATE_TEMPLATE: z.string().default("30/hour"),
-  RATE_LIMIT_GENERATE_AI_ACTION: z.string().default("60/hour"),
+  REDIS_URL: optionalUrl,
+  RATE_LIMIT_ANON: rateValue.default("120/min"),
+  RATE_LIMIT_USER: rateValue.default("600/min"),
+  RATE_LIMIT_PUBLIC_PROPOSAL: rateValue.default("60/min"),
+  RATE_LIMIT_GENERATE_PROPOSAL: rateValue.default("30/hour"),
+  RATE_LIMIT_GENERATE_TEMPLATE: rateValue.default("30/hour"),
+  RATE_LIMIT_GENERATE_AI_ACTION: rateValue.default("60/hour"),
+  SHARE_LINK_EXPIRY_DAYS: z.coerce.number().int().min(1).max(365).default(14),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
   DEMO_ACCOUNT_EMAIL: z.string().email().default("demo@scopeflow.ai")
@@ -59,6 +69,14 @@ const parsedEnv = rawEnvSchema.superRefine((value, context) => {
         message: `${key} is required in production.`
       });
     }
+  }
+
+  if (!value.REDIS_URL?.trim()) {
+    context.addIssue({
+      code: "custom",
+      path: ["REDIS_URL"],
+      message: "REDIS_URL is required in production for shared rate limiting."
+    });
   }
 
   if (![value.CORS_ALLOWED_ORIGINS, value.FRONTEND_URL, value.VERCEL_URL].some((item) => item?.trim())) {

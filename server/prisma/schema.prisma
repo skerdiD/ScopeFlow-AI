@@ -99,6 +99,7 @@ model ProposalProject {
   shareToken            String?                 @unique @map("share_token") @db.VarChar(64)
   shareEnabled          Boolean                 @map("share_enabled")
   shareCreatedAt        DateTime?               @map("share_created_at") @db.Timestamptz(6)
+  shareExpiresAt        DateTime?               @map("share_expires_at") @db.Timestamptz(6)
   viewedAt              DateTime?               @map("viewed_at") @db.Timestamptz(6)
   clientNameResponse    String                  @map("client_name_response") @db.VarChar(255)
   clientEmailResponse   String                  @map("client_email_response") @db.VarChar(254)
@@ -116,6 +117,7 @@ model ProposalProject {
 
   @@index([userId], map: "proposals_proposalproject_user_id_6579922d_idx")
   @@index([userId, updatedAt], map: "proposal_user_updated_idx")
+  @@index([shareExpiresAt], map: "proposal_share_expiry_idx")
   @@map("proposals_proposalproject")
 }
 

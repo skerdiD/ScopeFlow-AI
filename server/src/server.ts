@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { createApp } from "./app.js";
 import { env } from "./config/env.js";
 import { disconnectPrisma } from "./lib/prisma.js";
+import { disconnectRateLimitStore } from "./lib/rate-limit-store.js";
 
 const app = createApp();
 const server = createServer(app);
@@ -13,7 +14,7 @@ server.listen(env.PORT, env.HOST, () => {
 async function shutdown(signal: NodeJS.Signals) {
   console.log(`Received ${signal}; shutting down.`);
   server.close(async () => {
-    await disconnectPrisma();
+    await Promise.all([disconnectPrisma(), disconnectRateLimitStore()]);
     process.exit(0);
   });
 }

@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { ApiError } from "../middleware/error.middleware.js";
+import { env } from "../config/env.js";
 import type { ProjectInput, ProjectUpdateInput } from "../schemas/project.schemas.js";
 import { buildGeneratedProposalSnapshot, normalizeStringList, SECTION_FIELDS } from "../utils/proposal-content.js";
 
@@ -219,11 +220,14 @@ export async function manageShareLink(ownerId: string, projectId: bigint, operat
     return getProject(ownerId, projectId);
   }
   if (project.isDemo || isDemoUser) throw new ApiError(403, "Demo projects cannot create public approval links.");
+  const now = new Date();
+  const shareExpiresAt = new Date(now.getTime() + env.SHARE_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
   await prisma.proposalProject.update({
     where: { id: project.id },
     data: {
       shareToken: operation === "regenerate" || !project.shareToken ? randomBytes(32).toString("base64url") : project.shareToken,
-      shareCreatedAt: operation === "regenerate" || !project.shareToken ? new Date() : project.shareCreatedAt,
+      shareCreatedAt: now,
+      shareExpiresAt,
       shareEnabled: true,
       status: project.status === "draft" ? "sent" : project.status
     }

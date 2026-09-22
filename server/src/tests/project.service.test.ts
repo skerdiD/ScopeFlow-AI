@@ -16,12 +16,12 @@ const tx = vi.hoisted(() => ({
 }));
 const prismaMock = vi.hoisted(() => ({
   $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-  proposalProject: { findFirst: vi.fn(), findMany: vi.fn(), delete: vi.fn() }
+  proposalProject: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), delete: vi.fn() }
 }));
 
 vi.mock("../lib/prisma.js", () => ({ prisma: prismaMock }));
 
-import { createProject, updateProject } from "../services/project.service.js";
+import { createProject, manageShareLink, updateProject } from "../services/project.service.js";
 
 const baseProject = {
   id: 1n,
@@ -74,5 +74,22 @@ describe("project persistence transactions", () => {
     expect(tx.proposalVersion.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ changedSections: ["summary"] })
     }));
+  });
+
+  it("sets a fresh expiration whenever sharing is enabled", async () => {
+    prismaMock.proposalProject.findFirst
+      .mockResolvedValueOnce({ ...baseProject, shareToken: "existing-token", shareEnabled: false, isDemo: false })
+      .mockResolvedValueOnce({ ...baseProject, versions: [], clientComments: [] });
+
+    await manageShareLink("owner-id", 1n, "generate", false);
+
+    const update = prismaMock.proposalProject.update.mock.calls[0]?.[0];
+    expect(update.data).toMatchObject({
+      shareToken: "existing-token",
+      shareEnabled: true
+    });
+    expect(update.data.shareCreatedAt).toBeInstanceOf(Date);
+    expect(update.data.shareExpiresAt).toBeInstanceOf(Date);
+    expect(update.data.shareExpiresAt.getTime()).toBeGreaterThan(update.data.shareCreatedAt.getTime());
   });
 });

@@ -82,6 +82,7 @@ export type ProposalProject = {
   share_token: string | null;
   share_enabled: boolean;
   share_created_at: string | null;
+  share_expires_at: string | null;
   viewed_at: string | null;
   client_name_response: string;
   client_email_response: string;
@@ -96,7 +97,7 @@ export type ProposalProject = {
 
 export type ProposalProjectListItem = Omit<
   ProposalProject,
-  "generated_proposal" | "current_version_id" | "versions" | "share_token" | "share_enabled" | "share_created_at" | "viewed_at" | "client_name_response" | "client_email_response" | "client_response_comment" | "approved_at" | "rejected_at" | "is_demo" | "client_comments"
+  "generated_proposal" | "current_version_id" | "versions" | "share_token" | "share_enabled" | "share_created_at" | "share_expires_at" | "viewed_at" | "client_name_response" | "client_email_response" | "client_response_comment" | "approved_at" | "rejected_at" | "is_demo" | "client_comments"
 >;
 
 export type ProposalClientComment = {

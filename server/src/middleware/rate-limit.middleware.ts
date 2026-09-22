@@ -1,6 +1,7 @@
-import { createHash } from "node:crypto";
+import type { Request } from "express";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import { env } from "../config/env.js";
+import { rateLimitStore } from "../lib/rate-limit-store.js";
 
 function parseRate(value: string) {
   const match = value.trim().match(/^(\d+)\/(min|minute|hour)$/i);
@@ -9,37 +10,44 @@ function parseRate(value: string) {
   return { limit, windowMs };
 }
 
-function limiter(value: string) {
+export function verifiedUserKey(req: Request): string {
+  if (!req.authUser) throw new Error("Authenticated rate limiter must run after authentication.");
+  return `user:${req.authUser.id}`;
+}
+
+export function requestIpKey(req: Request): string {
+  return `ip:${ipKeyGenerator(req.ip ?? "")}`;
+}
+
+function authenticatedLimiter(value: string, prefix: string) {
   return rateLimit({
     ...parseRate(value),
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator(req) {
-      const identity = req.authUser?.username ?? ipKeyGenerator(req.ip ?? "");
-      return createHash("sha256").update(identity).digest("hex");
-    },
+    store: rateLimitStore(prefix),
+    keyGenerator: verifiedUserKey,
     handler(_req, res) {
       res.status(429).json({ detail: "Request was throttled. Please try again later." });
     }
   });
 }
 
-export const proposalGenerationLimiter = limiter(env.RATE_LIMIT_GENERATE_PROPOSAL);
-export const templateGenerationLimiter = limiter(env.RATE_LIMIT_GENERATE_TEMPLATE);
-export const aiActionLimiter = limiter(env.RATE_LIMIT_GENERATE_AI_ACTION);
+function ipLimiter(value: string, prefix: string) {
+  return rateLimit({
+    ...parseRate(value),
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: rateLimitStore(prefix),
+    keyGenerator: requestIpKey,
+    handler(_req, res) {
+      res.status(429).json({ detail: "Request was throttled. Please try again later." });
+    }
+  });
+}
 
-export const generalRateLimiter = rateLimit({
-  windowMs: 60_000,
-  limit(req) {
-    return parseRate(req.header("authorization") ? env.RATE_LIMIT_USER : env.RATE_LIMIT_ANON).limit;
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator(req) {
-    const identity = req.header("authorization") ?? ipKeyGenerator(req.ip ?? "");
-    return createHash("sha256").update(identity).digest("hex");
-  },
-  handler(_req, res) {
-    res.status(429).json({ detail: "Request was throttled. Please try again later." });
-  }
-});
+export const generalRateLimiter = ipLimiter(env.RATE_LIMIT_ANON, "global-ip");
+export const publicProposalLimiter = ipLimiter(env.RATE_LIMIT_PUBLIC_PROPOSAL, "public-proposal-ip");
+export const authenticatedRateLimiter = authenticatedLimiter(env.RATE_LIMIT_USER, "authenticated-user");
+export const proposalGenerationLimiter = authenticatedLimiter(env.RATE_LIMIT_GENERATE_PROPOSAL, "generate-proposal-user");
+export const templateGenerationLimiter = authenticatedLimiter(env.RATE_LIMIT_GENERATE_TEMPLATE, "generate-template-user");
+export const aiActionLimiter = authenticatedLimiter(env.RATE_LIMIT_GENERATE_AI_ACTION, "ai-action-user");

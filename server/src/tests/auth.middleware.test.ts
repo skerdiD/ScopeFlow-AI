@@ -17,12 +17,13 @@ vi.mock("../config/env.js", () => ({
     NODE_ENV: "test",
     SUPABASE_URL: "https://example.supabase.co",
     SUPABASE_ANON_KEY: "public-anon-key",
-    SUPABASE_AUTH_CACHE_TTL: 0,
+    SUPABASE_AUTH_CACHE_TTL: 30,
+    SUPABASE_AUTH_CACHE_MAX_ENTRIES: 2,
     DEMO_ACCOUNT_EMAIL: "demo@scopeflow.ai"
   }
 }));
 
-import { requireAuth } from "../middleware/auth.middleware.js";
+import { authCacheSizeForTests, clearAuthCacheForTests, requireAuth } from "../middleware/auth.middleware.js";
 
 function requestWithHeader(value?: string) {
   return {
@@ -34,6 +35,7 @@ describe("Supabase authentication middleware", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    clearAuthCacheForTests();
   });
 
   it("rejects a request without a bearer token", async () => {
@@ -93,5 +95,26 @@ describe("Supabase authentication middleware", () => {
 
     expect(fetch).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 401 }));
+  });
+
+  it("keeps the token verification cache bounded with LRU eviction", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: { headers: { Authorization: string } }) => ({
+      ok: true,
+      json: async () => ({ id: init.headers.Authorization, email: "owner@example.com" })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    prismaMock.localUser.findFirst.mockResolvedValue(null);
+    prismaMock.localUser.findUnique.mockImplementation(async ({ where }: { where: { username: string } }) => ({
+      id: 7,
+      username: where.username,
+      email: "owner@example.com"
+    }));
+
+    for (const token of ["one", "two", "three", "one"]) {
+      await requireAuth(requestWithHeader(`Bearer ${token}`), {} as Response, vi.fn());
+    }
+
+    expect(authCacheSizeForTests()).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });

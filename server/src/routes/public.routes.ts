@@ -5,8 +5,11 @@ import {
   publicResponseController
 } from "../controllers/public.controller.js";
 import { asyncHandler } from "../utils/async-handler.js";
+import { publicProposalLimiter } from "../middleware/rate-limit.middleware.js";
 
 export const publicRouter = Router();
+
+publicRouter.use("/public/proposals/:token", publicProposalLimiter);
 
 publicRouter.get(
   ["/public/proposals/:token", "/public/proposals/:token/"],

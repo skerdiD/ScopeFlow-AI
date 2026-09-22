@@ -12,16 +12,48 @@ type CacheEntry = {
 
 const authCache = new Map<string, CacheEntry>();
 
+function cachedAuthPayload(key: string): Record<string, unknown> | null {
+  const cached = authCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    authCache.delete(key);
+    return null;
+  }
+  // Refresh insertion order so the Map acts as a small LRU cache.
+  authCache.delete(key);
+  authCache.set(key, cached);
+  return cached.payload;
+}
+
+function cacheAuthPayload(key: string, entry: CacheEntry) {
+  for (const [cachedKey, cached] of authCache) {
+    if (cached.expiresAt <= Date.now()) authCache.delete(cachedKey);
+  }
+  authCache.delete(key);
+  while (authCache.size >= env.SUPABASE_AUTH_CACHE_MAX_ENTRIES) {
+    const oldestKey = authCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    authCache.delete(oldestKey);
+  }
+  authCache.set(key, entry);
+}
+
+export function clearAuthCacheForTests() {
+  authCache.clear();
+}
+
+export function authCacheSizeForTests() {
+  return authCache.size;
+}
+
 function isDemoIdentity(email: string, username: string): boolean {
   return email.trim().toLowerCase() === env.DEMO_ACCOUNT_EMAIL || username.startsWith("demo-seed-");
 }
 
 async function fetchSupabaseUser(token: string): Promise<Record<string, unknown>> {
   const cacheKey = createHash("sha256").update(token).digest("hex");
-  const cached = authCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.payload;
-  }
+  const cached = cachedAuthPayload(cacheKey);
+  if (cached) return cached;
 
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
     throw new ApiError(401, "Supabase auth environment is not configured.");
@@ -56,7 +88,7 @@ async function fetchSupabaseUser(token: string): Promise<Record<string, unknown>
   }
 
   if (env.SUPABASE_AUTH_CACHE_TTL > 0) {
-    authCache.set(cacheKey, {
+    cacheAuthPayload(cacheKey, {
       expiresAt: Date.now() + env.SUPABASE_AUTH_CACHE_TTL * 1000,
       payload
     });
