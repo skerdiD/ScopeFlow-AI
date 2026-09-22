@@ -17,7 +17,7 @@ export const usageController: RequestHandler = async (req, res) => {
 export const workspaceController: RequestHandler = async (req, res) => {
   const current = user(req);
   const [projectRows, usage] = await Promise.all([
-    listProjects(current.username),
+    listProjects(current),
     getCurrentUsage(current.id)
   ]);
   res.json({ projects: projectRows.map(serializeProjectListItem), usage });

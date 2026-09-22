@@ -6,7 +6,7 @@ import { getProject } from "../services/project.service.js";
 
 export const exportProjectController: RequestHandler = async (req, res) => {
   if (!req.authUser) throw new ApiError(401, "Authentication credentials were not provided.");
-  const project = await getProject(req.authUser.username, projectId(req.params.id));
+  const project = await getProject(req.authUser, projectId(req.params.id));
   const format = String(req.query.file_type || req.query.export_format || "").trim().toLowerCase();
   if (format !== "pdf" && format !== "docx") throw new ApiError(400, "file_type must be either 'pdf' or 'docx'.");
   const versionRaw = String(req.query.version_id ?? "").trim();

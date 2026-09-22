@@ -99,31 +99,40 @@ async function fetchSupabaseUser(token: string): Promise<Record<string, unknown>
 
 async function getOrCreateLocalUser(supabaseUserId: string, email: string) {
   const normalizedEmail = email.trim().toLowerCase();
+  const existingBySupabaseId = await prisma.localUser.findUnique({ where: { supabaseId: supabaseUserId } });
+  if (existingBySupabaseId) {
+    if (email && existingBySupabaseId.email !== email) {
+      return prisma.localUser.update({ where: { id: existingBySupabaseId.id }, data: { email } });
+    }
+    return existingBySupabaseId;
+  }
+
   if (normalizedEmail) {
     const demoUser = await prisma.localUser.findFirst({
       where: { email: { equals: normalizedEmail, mode: "insensitive" } },
       orderBy: { id: "asc" }
     });
     if (demoUser && isDemoIdentity(demoUser.email, demoUser.username)) {
-      return demoUser;
+      return prisma.localUser.update({
+        where: { id: demoUser.id },
+        data: { supabaseId: supabaseUserId }
+      });
     }
   }
 
   const existing = await prisma.localUser.findUnique({ where: { username: supabaseUserId } });
   if (existing) {
-    if (email && existing.email !== email) {
-      return prisma.localUser.update({
-        where: { id: existing.id },
-        data: { email }
-      });
-    }
-    return existing;
+    return prisma.localUser.update({
+      where: { id: existing.id },
+      data: { supabaseId: supabaseUserId, ...(email && existing.email !== email ? { email } : {}) }
+    });
   }
 
   const now = new Date();
   return prisma.localUser.create({
     data: {
       username: supabaseUserId,
+      supabaseId: supabaseUserId,
       email,
       password: "!",
       firstName: "",

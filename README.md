@@ -256,6 +256,32 @@ Open the frontend at:
 http://localhost:5173
 ```
 
+### Database migrations and legacy schema compatibility
+
+Prisma is the authoritative application schema. The physical PostgreSQL table names remain mapped to the existing Django-era `auth_user` and `proposals_*` tables through `@map`/`@@map`; they are not renamed because those names do not affect the Express runtime and renaming them would add migration risk.
+
+For a fresh development database, apply the checked-in baseline and all later migrations:
+
+```bash
+cd server
+npm run db:migrate:deploy
+npm run prisma:generate
+```
+
+For an existing database that predates the checked-in Prisma baseline, first take a database backup, verify that it is the existing ScopeFlow Django/Prisma schema, and mark only the baseline as already applied before deploying incremental migrations:
+
+```bash
+cd server
+npx prisma migrate resolve --applied 20260901000000_baseline
+npm run db:migrate:deploy
+```
+
+Do not run the baseline SQL directly against an existing populated database. If `share_expires_at` was added manually before Prisma migration tracking was enabled, also mark `20260922120000_add_share_expiration` as applied; otherwise let `migrate deploy` apply it normally. Never mark an incremental migration as applied without first verifying that its schema change already exists.
+
+For future local schema changes, use `npm run db:migrate:dev -- --name <migration-name>` and commit the generated migration. Production uses `npm run db:migrate:deploy`; `prisma db push` is not the production migration strategy.
+
+`LocalUser.id` is the canonical internal user key. `LocalUser.supabaseId` stores the unique Supabase identity, and new projects reference `LocalUser.id` through `ownerId`. The legacy project `user_id` string remains temporarily for API and unmatched-row compatibility. The migration backfills numeric ownership where `user_id` matches the legacy unique username; any unmatched rows remain nullable and should be audited before a later migration makes `owner_id` required.
+
 ---
 
 ## Available Scripts
@@ -280,6 +306,10 @@ npm test                # Run backend tests
 npm run build           # Compile the production backend
 npm start               # Start the compiled backend
 npm run prisma:generate # Generate Prisma Client
+npm run prisma:validate # Validate the Prisma schema
+npm run db:migrate:dev  # Create/apply a development migration
+npm run db:migrate:deploy # Apply checked-in migrations (production/CI)
+npm run db:migrate:status # Show migration status
 npm run seed:demo       # Seed demo data
 npm run seed:demo:reset # Reset only demo-scoped data, then reseed
 ```

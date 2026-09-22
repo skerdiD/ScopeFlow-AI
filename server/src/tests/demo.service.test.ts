@@ -78,11 +78,18 @@ describe("demo workspace seeding", () => {
     await seedDemoWorkspace({ reset: true });
 
     expect(tx.proposalProject.findMany).toHaveBeenCalledWith({
-      where: { userId: "demo-seed-demo", isDemo: true },
+      where: {
+        isDemo: true,
+        OR: [{ ownerId: 9 }, { ownerId: null, userId: "demo-seed-demo" }]
+      },
       select: { id: true }
     });
     expect(tx.proposalProject.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: [41n, 42n] }, userId: "demo-seed-demo", isDemo: true }
+      where: {
+        id: { in: [41n, 42n] },
+        isDemo: true,
+        OR: [{ ownerId: 9 }, { ownerId: null, userId: "demo-seed-demo" }]
+      }
     });
     expect(tx.aIUsageLog.deleteMany).toHaveBeenCalledWith({
       where: { userId: 9, projectId: { in: [41n, 42n] } }

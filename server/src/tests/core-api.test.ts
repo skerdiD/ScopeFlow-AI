@@ -138,7 +138,7 @@ describe("core project API contract", () => {
     const response = await request(app).get("/api/projects/");
     expect(response.status).toBe(200);
     expect(response.body[0].id).toBe(12);
-    expect(serviceMocks.listProjects).toHaveBeenCalledWith("supabase-owner-id");
+    expect(serviceMocks.listProjects).toHaveBeenCalledWith(expect.objectContaining({ id: 7, username: "supabase-owner-id" }));
   });
 
   it("creates a project under the token owner and preserves the API shape", async () => {
@@ -146,7 +146,7 @@ describe("core project API contract", () => {
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({ id: 12, user_id: "supabase-owner-id", current_version_id: 21 });
     expect(serviceMocks.createProject).toHaveBeenCalledWith(
-      "supabase-owner-id",
+      expect.objectContaining({ id: 7, username: "supabase-owner-id" }),
       expect.not.objectContaining({ user_id: expect.anything() }),
       false
     );
@@ -155,21 +155,21 @@ describe("core project API contract", () => {
   it("retrieves and updates by authenticated owner", async () => {
     expect((await request(app).get("/api/projects/12/")).status).toBe(200);
     expect((await request(app).patch("/api/projects/12/").send({ summary: "Changed" })).status).toBe(200);
-    expect(serviceMocks.getProject).toHaveBeenCalledWith("supabase-owner-id", 12n);
-    expect(serviceMocks.updateProject).toHaveBeenCalledWith("supabase-owner-id", 12n, { summary: "Changed" });
+    expect(serviceMocks.getProject).toHaveBeenCalledWith(expect.objectContaining({ id: 7, username: "supabase-owner-id" }), 12n);
+    expect(serviceMocks.updateProject).toHaveBeenCalledWith(expect.objectContaining({ id: 7, username: "supabase-owner-id" }), 12n, { summary: "Changed" });
   });
 
   it("deletes with a 204 and owner scope", async () => {
     const response = await request(app).delete("/api/projects/12/");
     expect(response.status).toBe(204);
-    expect(serviceMocks.deleteProject).toHaveBeenCalledWith("supabase-owner-id", 12n, false);
+    expect(serviceMocks.deleteProject).toHaveBeenCalledWith(expect.objectContaining({ id: 7, username: "supabase-owner-id" }), 12n, false);
   });
 
   it("restores versions and marks final using the existing routes", async () => {
     expect((await request(app).post("/api/projects/12/restore-version/").send({ version_id: 21 })).status).toBe(200);
     expect((await request(app).post("/api/projects/12/mark-final/").send({ summary: "Final" })).status).toBe(200);
-    expect(serviceMocks.restoreVersion).toHaveBeenCalledWith("supabase-owner-id", 12n, 21n);
-    expect(serviceMocks.markFinal).toHaveBeenCalledWith("supabase-owner-id", 12n, { summary: "Final" });
+    expect(serviceMocks.restoreVersion).toHaveBeenCalledWith(expect.objectContaining({ id: 7, username: "supabase-owner-id" }), 12n, 21n);
+    expect(serviceMocks.markFinal).toHaveBeenCalledWith(expect.objectContaining({ id: 7, username: "supabase-owner-id" }), 12n, { summary: "Final" });
   });
 
   it("returns usage and workspace payloads expected by TanStack Query", async () => {
@@ -202,7 +202,7 @@ describe("core project API contract", () => {
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("application/pdf");
     expect(response.headers["content-disposition"]).toMatch(/attachment; filename="website-current-\d{8}\.pdf"/);
-    expect(serviceMocks.getProject).toHaveBeenCalledWith("supabase-owner-id", 12n);
+    expect(serviceMocks.getProject).toHaveBeenCalledWith(expect.objectContaining({ id: 7, username: "supabase-owner-id" }), 12n);
   });
 
   it("validates export format and final-version selection", async () => {

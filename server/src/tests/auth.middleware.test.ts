@@ -36,6 +36,13 @@ describe("Supabase authentication middleware", () => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
     clearAuthCacheForTests();
+    prismaMock.localUser.findUnique.mockResolvedValue(null);
+    prismaMock.localUser.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: 9,
+      username: "demo-seed-account",
+      email: "demo@scopeflow.ai",
+      ...data
+    }));
   });
 
   it("rejects a request without a bearer token", async () => {
@@ -50,8 +57,9 @@ describe("Supabase authentication middleware", () => {
       json: vi.fn().mockResolvedValue({ id: "supabase-user-1", email: "owner@example.com" })
     }));
     prismaMock.localUser.findFirst.mockResolvedValue(null);
-    prismaMock.localUser.findUnique.mockResolvedValue({
+    prismaMock.localUser.findUnique.mockResolvedValueOnce({
       id: 7,
+      supabaseId: "supabase-user-1",
       username: "supabase-user-1",
       email: "owner@example.com"
     });
@@ -68,6 +76,7 @@ describe("Supabase authentication middleware", () => {
       })
     );
     expect(req.authUser).toMatchObject({ id: 7, username: "supabase-user-1", isDemo: false });
+    expect(prismaMock.localUser.findUnique).toHaveBeenCalledWith({ where: { supabaseId: "supabase-user-1" } });
     expect(next).toHaveBeenCalledWith();
   });
 
@@ -86,7 +95,10 @@ describe("Supabase authentication middleware", () => {
     await requireAuth(req, {} as Response, vi.fn());
 
     expect(req.authUser).toMatchObject({ username: "demo-seed-account", isDemo: true });
-    expect(prismaMock.localUser.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.localUser.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 9 },
+      data: { supabaseId: "remote-demo-id" }
+    }));
   });
 
   it("rejects bearer headers containing extra token data", async () => {
@@ -104,9 +116,10 @@ describe("Supabase authentication middleware", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
     prismaMock.localUser.findFirst.mockResolvedValue(null);
-    prismaMock.localUser.findUnique.mockImplementation(async ({ where }: { where: { username: string } }) => ({
+    prismaMock.localUser.findUnique.mockImplementation(async ({ where }: { where: { supabaseId?: string; username?: string } }) => ({
       id: 7,
-      username: where.username,
+      username: where.supabaseId ?? where.username,
+      supabaseId: where.supabaseId ?? where.username,
       email: "owner@example.com"
     }));
 

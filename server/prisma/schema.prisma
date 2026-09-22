@@ -8,43 +8,45 @@ datasource db {
 }
 
 model LocalUser {
-  id           Int               @id @default(autoincrement())
-  password     String            @db.VarChar(128)
-  lastLogin    DateTime?         @map("last_login") @db.Timestamptz(6)
-  isSuperuser  Boolean           @map("is_superuser")
-  username     String            @unique @db.VarChar(150)
-  firstName    String            @map("first_name") @db.VarChar(150)
-  lastName     String            @map("last_name") @db.VarChar(150)
-  email        String            @db.VarChar(254)
-  isStaff      Boolean           @map("is_staff")
-  isActive     Boolean           @map("is_active")
-  dateJoined   DateTime          @map("date_joined") @db.Timestamptz(6)
-  plan         UserPlan?
-  usageRecords UsageRecord[]
-  aiUsageLogs  AIUsageLog[]
+  id             Int               @id @default(autoincrement())
+  supabaseId     String?           @unique(map: "auth_user_supabase_id_key") @map("supabase_id") @db.VarChar(255)
+  password       String            @db.VarChar(128)
+  lastLogin      DateTime?         @map("last_login") @db.Timestamptz(6)
+  isSuperuser    Boolean           @map("is_superuser")
+  username       String            @unique @db.VarChar(150)
+  firstName      String            @map("first_name") @db.VarChar(150)
+  lastName       String            @map("last_name") @db.VarChar(150)
+  email          String            @db.VarChar(254)
+  isStaff        Boolean           @map("is_staff")
+  isActive       Boolean           @map("is_active")
+  dateJoined     DateTime          @map("date_joined") @db.Timestamptz(6)
+  plan           UserPlan?
+  usageRecords   UsageRecord[]
+  aiUsageLogs    AIUsageLog[]
   qualityReviews AIQualityReview[]
+  projects       ProposalProject[]
 
   @@map("auth_user")
 }
 
 model UserPlan {
-  id        BigInt     @id @default(autoincrement())
-  userId    Int        @unique @map("user_id")
-  plan      String     @db.VarChar(20)
-  createdAt DateTime   @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id        BigInt    @id @default(autoincrement())
+  userId    Int       @unique @map("user_id")
+  plan      String    @db.VarChar(20)
+  createdAt DateTime  @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   user      LocalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("proposals_userplan")
 }
 
 model UsageRecord {
-  id                BigInt     @id @default(autoincrement())
-  userId            Int        @map("user_id")
-  period            DateTime   @db.Date
-  aiGenerationsUsed Int        @map("ai_generations_used")
-  createdAt         DateTime   @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                BigInt    @id @default(autoincrement())
+  userId            Int       @map("user_id")
+  period            DateTime  @db.Date
+  aiGenerationsUsed Int       @map("ai_generations_used")
+  createdAt         DateTime  @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   user              LocalUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, period], map: "unique_user_usage_period")
@@ -73,6 +75,7 @@ model AIPromptVersion {
 
 model ProposalProject {
   id                    BigInt                  @id @default(autoincrement())
+  ownerId               Int?                    @map("owner_id")
   userId                String                  @map("user_id") @db.VarChar(255)
   clientName            String                  @map("client_name") @db.VarChar(255)
   projectName           String                  @map("project_name") @db.VarChar(255)
@@ -114,8 +117,10 @@ model ProposalProject {
   clientComments        ProposalClientComment[]
   aiUsageLogs           AIUsageLog[]
   qualityReviews        AIQualityReview[]
+  owner                 LocalUser?              @relation(fields: [ownerId], references: [id], onDelete: SetNull, map: "proposal_owner_id_fkey")
 
   @@index([userId], map: "proposals_proposalproject_user_id_6579922d_idx")
+  @@index([ownerId, updatedAt(sort: Desc)], map: "proposal_owner_updated_idx")
   @@index([userId, updatedAt], map: "proposal_user_updated_idx")
   @@index([shareExpiresAt], map: "proposal_share_expiry_idx")
   @@map("proposals_proposalproject")
@@ -142,6 +147,7 @@ model ProposalVersion {
   currentForProject ProposalProject[] @relation("CurrentProjectVersion")
   qualityReviews    AIQualityReview[]
 
+  @@unique([projectId, versionNumber], map: "proposal_project_version_key")
   @@index([projectId, isFinal, createdAt], map: "proposal_ver_export_idx")
   @@map("proposals_proposalversion")
 }
@@ -159,21 +165,21 @@ model ProposalClientComment {
 }
 
 model AIUsageLog {
-  id             BigInt            @id @default(autoincrement())
-  userId         Int               @map("user_id")
-  projectId      BigInt?           @map("project_id")
-  actionType     String            @map("action_type") @db.VarChar(50)
-  status         String            @db.VarChar(20)
+  id              BigInt           @id @default(autoincrement())
+  userId          Int              @map("user_id")
+  projectId       BigInt?          @map("project_id")
+  actionType      String           @map("action_type") @db.VarChar(50)
+  status          String           @db.VarChar(20)
   promptVersionId BigInt?          @map("prompt_version_id")
-  errorMessage   String            @map("error_message")
-  inputTokens    Int?              @map("input_tokens")
-  outputTokens   Int?              @map("output_tokens")
-  totalTokens    Int?              @map("total_tokens")
-  estimatedCost  Decimal?          @map("estimated_cost") @db.Decimal(10, 6)
-  createdAt      DateTime          @map("created_at") @db.Timestamptz(6)
-  user           LocalUser         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project        ProposalProject?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  promptVersion  AIPromptVersion?  @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
+  errorMessage    String           @map("error_message")
+  inputTokens     Int?             @map("input_tokens")
+  outputTokens    Int?             @map("output_tokens")
+  totalTokens     Int?             @map("total_tokens")
+  estimatedCost   Decimal?         @map("estimated_cost") @db.Decimal(10, 6)
+  createdAt       DateTime         @map("created_at") @db.Timestamptz(6)
+  user            LocalUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         ProposalProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  promptVersion   AIPromptVersion? @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
 
   @@index([actionType], map: "proposals_aiusagelog_action_type_41a0d6fd_idx")
   @@index([status], map: "proposals_aiusagelog_status_0bd25afd_idx")

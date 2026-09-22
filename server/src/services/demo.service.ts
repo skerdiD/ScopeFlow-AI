@@ -80,11 +80,16 @@ export async function seedDemoWorkspace(options: { email?: string; reset?: boole
   return prisma.$transaction(async (tx) => {
     const seededAt = new Date();
     if (options.reset) {
-      const ids = (await tx.proposalProject.findMany({ where: { userId: user.username, isDemo: true }, select: { id: true } })).map((item) => item.id);
+      const ids = (await tx.proposalProject.findMany({
+        where: { isDemo: true, OR: [{ ownerId: user.id }, { ownerId: null, userId: user.username }] },
+        select: { id: true }
+      })).map((item) => item.id);
       if (ids.length) {
         await tx.aIUsageLog.deleteMany({ where: { userId: user.id, projectId: { in: ids } } });
         await tx.aIQualityReview.deleteMany({ where: { userId: user.id, projectId: { in: ids } } });
-        await tx.proposalProject.deleteMany({ where: { id: { in: ids }, userId: user.username, isDemo: true } });
+        await tx.proposalProject.deleteMany({
+          where: { id: { in: ids }, isDemo: true, OR: [{ ownerId: user.id }, { ownerId: null, userId: user.username }] }
+        });
       }
       if (user.username.startsWith("demo-seed-")) {
         await tx.usageRecord.deleteMany({ where: { userId: user.id, period: currentPeriod() } });
@@ -105,7 +110,11 @@ export async function seedDemoWorkspace(options: { email?: string; reset?: boole
     for (let index = 0; index < DEMO_PROJECTS.length; index += 1) {
       const data = DEMO_PROJECTS[index];
       const existing = await tx.proposalProject.findFirst({
-        where: { userId: user.username, projectName: data.projectName, isDemo: true }
+        where: {
+          projectName: data.projectName,
+          isDemo: true,
+          OR: [{ ownerId: user.id }, { ownerId: null, userId: user.username }]
+        }
       });
       const createdAt = new Date(Date.now() - data.daysCreated * 86_400_000);
       const updatedAt = new Date(Date.now() - data.daysUpdated * 86_400_000);
@@ -120,7 +129,7 @@ export async function seedDemoWorkspace(options: { email?: string; reset?: boole
         suggestedQuestions: ["Who will approve final scope?", "Which workflows are highest priority for launch?", "Are there fixed dates we need to protect?"],
         generatedProposal: generated(data), status: data.status, isDemo: true, shareEnabled: false, shareToken: null,
         paymentUrl: "", clientNameResponse: "", clientEmailResponse: "", clientResponseComment: "",
-        createdAt,
+        ownerId: user.id, createdAt,
         updatedAt
       };
       const project = existing
@@ -177,7 +186,9 @@ export async function ensureDemoWorkspace(user: { id: number; username: string; 
   if (user.email.trim().toLowerCase() !== env.DEMO_ACCOUNT_EMAIL && !user.username.startsWith("demo-seed-")) return;
   if ((verifiedUntil.get(user.id) ?? 0) > Date.now()) return;
   const [count, plan, usage] = await Promise.all([
-    prisma.proposalProject.count({ where: { userId: user.username, isDemo: true } }),
+    prisma.proposalProject.count({
+      where: { isDemo: true, OR: [{ ownerId: user.id }, { ownerId: null, userId: user.username }] }
+    }),
     prisma.userPlan.findUnique({ where: { userId: user.id } }),
     prisma.usageRecord.findUnique({ where: { userId_period: { userId: user.id, period: currentPeriod() } } })
   ]);

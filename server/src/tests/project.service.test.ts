@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const tx = vi.hoisted(() => ({
+  $executeRaw: vi.fn(),
   proposalProject: {
     create: vi.fn(),
     update: vi.fn(),
@@ -10,6 +11,7 @@ const tx = vi.hoisted(() => ({
   proposalVersion: {
     aggregate: vi.fn(),
     create: vi.fn(),
+    findFirst: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn()
   }
@@ -21,7 +23,7 @@ const prismaMock = vi.hoisted(() => ({
 
 vi.mock("../lib/prisma.js", () => ({ prisma: prismaMock }));
 
-import { createProject, manageShareLink, updateProject } from "../services/project.service.js";
+import { createProject, manageShareLink, restoreVersion, updateProject } from "../services/project.service.js";
 
 const baseProject = {
   id: 1n,
@@ -35,6 +37,7 @@ const baseProject = {
   risks: "",
   nextSteps: ""
 };
+const owner = { id: 7, username: "owner-id" };
 
 describe("project persistence transactions", () => {
   beforeEach(() => {
@@ -47,7 +50,7 @@ describe("project persistence transactions", () => {
   });
 
   it("creates the project and initial version atomically under the authenticated owner", async () => {
-    await createProject("owner-id", {
+    await createProject(owner, {
       client_name: "Acme",
       project_name: "Website",
       project_type: "Web Design",
@@ -56,7 +59,7 @@ describe("project persistence transactions", () => {
 
     expect(prismaMock.$transaction).toHaveBeenCalledOnce();
     expect(tx.proposalProject.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ userId: "owner-id", clientName: "Acme", isDemo: false })
+      data: expect.objectContaining({ ownerId: 7, userId: "owner-id", clientName: "Acme", isDemo: false })
     }));
     expect(tx.proposalVersion.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ projectId: 1n, versionNumber: 1, source: "manual" })
@@ -69,7 +72,7 @@ describe("project persistence transactions", () => {
       .mockResolvedValueOnce({ ...baseProject, summary: "Changed" })
       .mockResolvedValue(baseProject);
 
-    await updateProject("owner-id", 1n, { summary: "Changed" });
+    await updateProject(owner, 1n, { summary: "Changed" });
 
     expect(tx.proposalVersion.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ changedSections: ["summary"] })
@@ -81,7 +84,7 @@ describe("project persistence transactions", () => {
       .mockResolvedValueOnce({ ...baseProject, shareToken: "existing-token", shareEnabled: false, isDemo: false })
       .mockResolvedValueOnce({ ...baseProject, versions: [], clientComments: [] });
 
-    await manageShareLink("owner-id", 1n, "generate", false);
+    await manageShareLink(owner, 1n, "generate", false);
 
     const update = prismaMock.proposalProject.update.mock.calls[0]?.[0];
     expect(update.data).toMatchObject({
@@ -91,5 +94,34 @@ describe("project persistence transactions", () => {
     expect(update.data.shareCreatedAt).toBeInstanceOf(Date);
     expect(update.data.shareExpiresAt).toBeInstanceOf(Date);
     expect(update.data.shareExpiresAt.getTime()).toBeGreaterThan(update.data.shareCreatedAt.getTime());
+  });
+
+  it("restores only a version belonging to the canonically owned project", async () => {
+    tx.proposalProject.findFirst.mockResolvedValue(baseProject);
+    tx.proposalVersion.findFirst.mockResolvedValue({
+      id: 22n,
+      projectId: 1n,
+      summary: "Restored",
+      scope: "Scope",
+      deliverables: "Deliverables",
+      milestones: "Milestones",
+      proposalTimeline: "Timeline",
+      pricing: "Pricing",
+      risks: "Risks",
+      nextSteps: "Next"
+    });
+
+    await restoreVersion(owner, 1n, 22n);
+
+    expect(tx.proposalProject.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: 1n,
+        OR: [{ ownerId: 7 }, { ownerId: null, userId: "owner-id" }]
+      })
+    }));
+    expect(tx.proposalVersion.findFirst).toHaveBeenCalledWith({ where: { id: 22n, projectId: 1n } });
+    expect(tx.proposalProject.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ summary: "Restored", currentVersionId: 22n })
+    }));
   });
 });

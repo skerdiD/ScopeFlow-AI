@@ -104,6 +104,7 @@ export async function generateProposal(user: Express.AuthenticatedUser, input: G
     ].filter(Boolean).join("\n");
     const project = await tx.proposalProject.create({
       data: {
+        ownerId: user.id,
         userId: user.username,
         clientName: input.client_name,
         projectName: input.project_name,
@@ -140,7 +141,7 @@ export async function generateProposal(user: Express.AuthenticatedUser, input: G
 }
 
 export async function regenerateSection(user: Express.AuthenticatedUser, projectId: bigint, section: keyof typeof AI_SECTION_TO_FIELD, instructions: string) {
-  const project = await getProject(user.username, projectId);
+  const project = await getProject(user, projectId);
   const field = AI_SECTION_TO_FIELD[section];
   let result: Awaited<ReturnType<typeof generateSectionRegeneration>>;
   try { result = await generateSectionRegeneration(context(project), section, instructions); }
@@ -167,7 +168,7 @@ export async function regenerateSection(user: Express.AuthenticatedUser, project
 }
 
 export async function reviewQuality(user: Express.AuthenticatedUser, projectId: bigint) {
-  const project = await getProject(user.username, projectId);
+  const project = await getProject(user, projectId);
   let result: Awaited<ReturnType<typeof generateQualityReview>>;
   try { result = await generateQualityReview(context(project)); }
   catch (error) {
@@ -194,7 +195,7 @@ export async function reviewQuality(user: Express.AuthenticatedUser, projectId: 
 }
 
 export async function suggestEdits(user: Express.AuthenticatedUser, projectId: bigint, section: string, content: string) {
-  await getProject(user.username, projectId);
+  await getProject(user, projectId);
   try {
     const result = await generateEditSuggestions(section, content);
     await logAiAction({

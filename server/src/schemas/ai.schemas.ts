@@ -13,7 +13,7 @@ export const editSuggestionsSchema = z.object({
 
 export const templateDraftSchema = z.object({
   user_prompt: z.string().trim().min(1).max(3000),
-  existing_categories: z.array(z.unknown()).max(40).default([])
+  existing_categories: z.array(z.string().trim().min(1).max(120)).max(40).default([])
 });
 
 export function projectId(value: string | string[] | undefined): bigint {

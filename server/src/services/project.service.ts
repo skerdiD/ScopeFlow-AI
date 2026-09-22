@@ -12,6 +12,7 @@ const detailInclude = {
 };
 
 type Transaction = Parameters<Parameters<PrismaClient["$transaction"]>[0]>[0];
+export type ProjectOwner = Pick<Express.AuthenticatedUser, "id" | "username">;
 
 function json(value: unknown): Prisma.InputJsonValue {
   return value as Prisma.InputJsonValue;
@@ -56,8 +57,18 @@ function toProjectData(input: ProjectUpdateInput) {
   return data;
 }
 
-async function ownedProject(db: Transaction | typeof prisma, projectId: bigint, ownerId: string) {
-  const project = await db.proposalProject.findFirst({ where: { id: projectId, userId: ownerId } });
+function ownershipWhere(owner: ProjectOwner): Prisma.ProposalProjectWhereInput {
+  return {
+    OR: [
+      { ownerId: owner.id },
+      // Transitional fallback for legacy rows that could not be backfilled yet.
+      { ownerId: null, userId: owner.username }
+    ]
+  };
+}
+
+async function ownedProject(db: Transaction | typeof prisma, projectId: bigint, owner: ProjectOwner) {
+  const project = await db.proposalProject.findFirst({ where: { id: projectId, ...ownershipWhere(owner) } });
   if (!project) throw new ApiError(404, "Not found.");
   return project;
 }
@@ -69,6 +80,9 @@ export async function createProjectVersion(
   changedSections: readonly string[],
   isFinal = false
 ) {
+  // PostgreSQL transaction-scoped advisory locks serialize version allocation per project.
+  // The database unique constraint remains the final invariant.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(${project.id})`;
   if (isFinal) {
     const previous = await tx.proposalVersion.findMany({ where: { projectId: project.id, isFinal: true } });
     for (const version of previous) {
@@ -103,27 +117,28 @@ export async function createProjectVersion(
   return version;
 }
 
-export async function listProjects(ownerId: string) {
-  return prisma.proposalProject.findMany({ where: { userId: ownerId }, orderBy: { updatedAt: "desc" } });
+export async function listProjects(owner: ProjectOwner) {
+  return prisma.proposalProject.findMany({ where: ownershipWhere(owner), orderBy: { updatedAt: "desc" } });
 }
 
-export async function getProject(ownerId: string, projectId: bigint) {
+export async function getProject(owner: ProjectOwner, projectId: bigint) {
   const project = await prisma.proposalProject.findFirst({
-    where: { id: projectId, userId: ownerId },
+    where: { id: projectId, ...ownershipWhere(owner) },
     include: detailInclude
   });
   if (!project) throw new ApiError(404, "Not found.");
   return project;
 }
 
-export async function createProject(ownerId: string, input: ProjectInput, isDemo: boolean) {
+export async function createProject(owner: ProjectOwner, input: ProjectInput, isDemo: boolean) {
   return prisma.$transaction(async (tx) => {
     const data = toProjectData(input);
     const snapshotSource = { ...data } as Record<string, unknown>;
     const project = await tx.proposalProject.create({
       data: {
         ...(data as Prisma.ProposalProjectUncheckedCreateInput),
-        userId: ownerId,
+        ownerId: owner.id,
+        userId: owner.username,
         budget: input.budget ?? "",
         timeline: input.timeline ?? "",
         requirements: input.requirements ?? "",
@@ -157,9 +172,9 @@ export async function createProject(ownerId: string, input: ProjectInput, isDemo
   });
 }
 
-export async function updateProject(ownerId: string, projectId: bigint, input: ProjectUpdateInput) {
+export async function updateProject(owner: ProjectOwner, projectId: bigint, input: ProjectUpdateInput) {
   return prisma.$transaction(async (tx) => {
-    const before = await ownedProject(tx, projectId, ownerId);
+    const before = await ownedProject(tx, projectId, owner);
     const updated = await tx.proposalProject.update({ where: { id: before.id }, data: toProjectData(input) });
     const changed = SECTION_FIELDS.filter((field) => before[field] !== updated[field]);
     if (changed.length) await createProjectVersion(tx, updated, "manual", changed);
@@ -171,15 +186,15 @@ export async function updateProject(ownerId: string, projectId: bigint, input: P
   });
 }
 
-export async function deleteProject(ownerId: string, projectId: bigint, isDemoUser: boolean) {
+export async function deleteProject(owner: ProjectOwner, projectId: bigint, isDemoUser: boolean) {
   if (isDemoUser) throw new ApiError(403, "This action is disabled in demo mode. Demo users cannot permanently delete projects.");
-  const project = await ownedProject(prisma, projectId, ownerId);
+  const project = await ownedProject(prisma, projectId, owner);
   await prisma.proposalProject.delete({ where: { id: project.id } });
 }
 
-export async function restoreVersion(ownerId: string, projectId: bigint, versionId: bigint) {
+export async function restoreVersion(owner: ProjectOwner, projectId: bigint, versionId: bigint) {
   return prisma.$transaction(async (tx) => {
-    const project = await ownedProject(tx, projectId, ownerId);
+    const project = await ownedProject(tx, projectId, owner);
     const version = await tx.proposalVersion.findFirst({ where: { id: versionId, projectId: project.id } });
     if (!version) throw new ApiError(404, "Not found.");
     const updated = await tx.proposalProject.update({
@@ -196,9 +211,9 @@ export async function restoreVersion(ownerId: string, projectId: bigint, version
   });
 }
 
-export async function markFinal(ownerId: string, projectId: bigint, input: ProjectUpdateInput) {
+export async function markFinal(owner: ProjectOwner, projectId: bigint, input: ProjectUpdateInput) {
   return prisma.$transaction(async (tx) => {
-    const project = await ownedProject(tx, projectId, ownerId);
+    const project = await ownedProject(tx, projectId, owner);
     const normalized = { ...input };
     for (const key of ["missing_information", "scope_risks", "unclear_requirements", "suggested_questions"] as const) {
       if (key in normalized) normalized[key] = normalizeStringList(normalized[key]);
@@ -213,11 +228,11 @@ export async function markFinal(ownerId: string, projectId: bigint, input: Proje
   });
 }
 
-export async function manageShareLink(ownerId: string, projectId: bigint, operation: "generate" | "regenerate" | "disable", isDemoUser: boolean) {
-  const project = await ownedProject(prisma, projectId, ownerId);
+export async function manageShareLink(owner: ProjectOwner, projectId: bigint, operation: "generate" | "regenerate" | "disable", isDemoUser: boolean) {
+  const project = await ownedProject(prisma, projectId, owner);
   if (operation === "disable") {
     await prisma.proposalProject.update({ where: { id: project.id }, data: { shareEnabled: false } });
-    return getProject(ownerId, projectId);
+    return getProject(owner, projectId);
   }
   if (project.isDemo || isDemoUser) throw new ApiError(403, "Demo projects cannot create public approval links.");
   const now = new Date();
@@ -232,7 +247,7 @@ export async function manageShareLink(ownerId: string, projectId: bigint, operat
       status: project.status === "draft" ? "sent" : project.status
     }
   });
-  return getProject(ownerId, projectId);
+  return getProject(owner, projectId);
 }
 
 export { detailInclude };

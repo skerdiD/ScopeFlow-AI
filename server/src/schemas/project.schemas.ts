@@ -4,11 +4,8 @@ import { ApiError } from "../middleware/error.middleware.js";
 const requiredText = (max: number) => z.string().trim().min(1, "This field may not be blank.").max(max);
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 const longText = z.string().max(8000).optional();
-const stringList = z.array(z.unknown()).max(100).superRefine((items, context) => {
-  if (items.some((item) => String(item).length > 500)) {
-    context.addIssue({ code: "custom", message: "Each item must be at most 500 characters." });
-  }
-});
+const stringListItem = z.string().trim().min(1, "List items may not be blank.").max(500);
+const stringList = z.array(stringListItem).max(100);
 
 const projectFields = {
   client_name: requiredText(255),
